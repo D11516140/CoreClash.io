@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CoreClash.io - Cyber RTS</title>
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --card-bg: rgba(18, 24, 38, 0.85);
+      --primary: #00f0ff;
+      --danger: #ff0055;
+      --warning: #ffb700;
+      --success: #00ff66;
+      --text: #e2e8f0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; user-select: none; }
+    body {
+      background-color: var(--bg-color);
+      color: var(--text);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #game-wrapper {
+      position: relative;
+      width: 1200px;
+      height: 800px;
+      box-shadow: 0 0 50px rgba(0, 240, 255, 0.15);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      transform-origin: center center;
+      flex-shrink: 0;
+    }
+    canvas { width: 100%; height: 100%; display: block; background: #07090e; cursor: crosshair; }
+
+    /* 🚪 大廳 Modal 樣式 */
+    #lobby-modal {
+      position: absolute; inset: 0; background: rgba(7, 9, 14, 0.92); backdrop-filter: blur(16px);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; z-index: 200;
+    }
+    #lobby-modal h1 {
+      font-size: 56px; font-weight: 900; color: var(--primary); text-shadow: 0 0 30px rgba(0, 240, 255, 0.6);
+      letter-spacing: 4px; text-transform: uppercase; margin-bottom: 4px;
+    }
+    .lobby-subtitle { font-size: 16px; color: #9ca3af; letter-spacing: 2px; }
+
+    .lobby-box {
+      background: rgba(18, 24, 38, 0.9); border: 1px solid rgba(0, 240, 255, 0.3); border-radius: 12px;
+      padding: 24px 32px; display: flex; flex-direction: column; gap: 18px; width: 420px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    }
+    .input-group { display: flex; flex-direction: column; gap: 8px; }
+    .input-group label { font-size: 13px; font-weight: bold; color: var(--primary); letter-spacing: 1px; }
+    .name-input {
+      background: rgba(11, 15, 25, 0.8); border: 1px solid rgba(0, 240, 255, 0.4); color: #fff;
+      padding: 12px 16px; border-radius: 8px; font-size: 16px; font-weight: bold; outline: none; transition: all 0.2s;
+    }
+    .name-input:focus { border-color: var(--primary); box-shadow: 0 0 12px rgba(0, 240, 255, 0.4); }
+
+    .controls-guide { display: flex; flex-direction: column; gap: 6px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; font-size: 12px; color: #9ca3af; }
+    .guide-row { display: flex; justify-content: space-between; }
+    .guide-key { color: var(--warning); font-weight: bold; }
+
+    .play-btn {
+      background: linear-gradient(135deg, var(--primary), #00a8ff); color: #000; border: none; padding: 14px;
+      font-size: 18px; font-weight: 900; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.4); letter-spacing: 1px;
+    }
+    .play-btn:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(0, 240, 255, 0.7); }
+
+    /* 左上角 HUD 玩家狀態 */
+    .hud-card {
+      position: absolute; top: 20px; left: 20px; background: var(--card-bg); backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 14px 22px;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); pointer-events: none; min-width: 240px; display: flex; flex-direction: column; gap: 8px; z-index: 10;
+    }
+    .hud-stat { display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 600; }
+    .stat-val { font-size: 16px; text-shadow: 0 0 8px currentColor; }
+    .hp-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-top: 2px; }
+    .hp-bar-fill { height: 100%; background: linear-gradient(90deg, var(--danger), var(--warning)); transition: width 0.2s ease; }
+
+    /* 🏆 右側 HUD 容器 (使用 Flexbox 讓聯盟面板動態緊跟排行榜) */
+    .right-hud-panel {
+      position: absolute; top: 20px; right: 20px; width: 220px;
+      display: flex; flex-direction: column; gap: 12px; z-index: 10; pointer-events: none;
+    }
+
+    .leaderboard-card {
+      background: var(--card-bg); backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 240, 255, 0.3); border-radius: 10px; padding: 12px 16px; width: 100%;
+      pointer-events: auto;
+    }
+    .lb-header { font-size: 13px; font-weight: bold; color: var(--warning); margin-bottom: 8px; display: flex; justify-content: space-between; }
+    .lb-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .lb-name { cursor: pointer; color: var(--primary); }
+    .lb-name:hover { text-decoration: underline; }
+    .lb-row.me { color: var(--success); font-weight: bold; }
+
+    /* 🛡️ 聯盟 UI 面板 */
+    .alliance-card {
+      background: var(--card-bg); backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 240, 255, 0.2); border-radius: 10px; padding: 12px 16px; width: 100%;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: auto;
+    }
+    .alliance-input-row { display: flex; gap: 6px; }
+    .alliance-btn {
+      background: rgba(0, 240, 255, 0.2); border: 1px solid var(--primary); color: #fff; padding: 6px 12px;
+      border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .alliance-btn:hover { background: var(--primary); color: #000; }
+    .leave-btn { border-color: var(--danger); background: rgba(255, 0, 85, 0.2); }
+    .leave-btn:hover { background: var(--danger); color: #fff; }
+
+    /* 組隊邀請彈窗 */
+    #invite-modal {
+      position: absolute; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(6px);
+      display: none; align-items: center; justify-content: center; z-index: 300;
+    }
+    .invite-box {
+      background: var(--card-bg); border: 2px solid var(--primary); border-radius: 12px; padding: 24px;
+      display: flex; flex-direction: column; gap: 16px; align-items: center; text-align: center; box-shadow: 0 0 30px rgba(0,240,255,0.4);
+    }
+
+    #controls-bar {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 12px; pointer-events: auto; z-index: 10;
+    }
+    .key-btn {
+      background: var(--card-bg); backdrop-filter: blur(8px); border: 1px solid rgba(0, 240, 255, 0.3);
+      color: var(--text); padding: 10px 18px; border-radius: 8px; font-weight: bold; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 4px; transition: all 0.15s ease; min-width: 130px;
+    }
+    .key-btn:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 0 15px rgba(0, 240, 255, 0.4); }
+    .key-btn.active { border-color: var(--warning); box-shadow: 0 0 15px var(--warning); }
+    .key-btn.sub-active { border-color: var(--success); box-shadow: 0 0 15px var(--success); }
+    .key-btn.back-btn { border-color: var(--danger); }
+    .key-badge { background: rgba(255,255,255,0.15); padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--primary); }
+
+    #game-over-modal {
+      position: absolute; inset: 0; background: rgba(7, 9, 14, 0.88); backdrop-filter: blur(10px);
+      display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; z-index: 100;
+    }
+    #game-over-modal h1 { font-size: 48px; color: var(--danger); text-shadow: 0 0 20px var(--danger); letter-spacing: 2px; }
+    .restart-btn {
+      background: var(--primary); color: #000; border: none; padding: 12px 32px; font-size: 18px;
+      font-weight: bold; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+    }
+    .restart-btn:hover { transform: scale(1.05); box-shadow: 0 0 25px var(--primary); }
+  </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+  <canvas id="gameCanvas" width="1200" height="800"></canvas>
+
+  <!-- 🚪 大廳選擇 Modal -->
+  <div id="lobby-modal">
+    <h1>CoreClash.io</h1>
+    <p class="lobby-subtitle">即時賽博戰術競技場</p>
+    
+    <div class="lobby-box">
+      <div class="input-group">
+        <label for="nickname-input">指揮官代號 (NICKNAME)</label>
+        <input type="text" id="nickname-input" class="name-input" placeholder="輸入你的指揮官名稱..." maxlength="12">
+      </div>
+
+      <div class="controls-guide">
+        <div class="guide-row"><span>WASD</span><span class="guide-key">指揮官移動</span></div>
+        <div class="guide-row"><span>E 鍵</span><span class="guide-key">建基地 / 傳送回基地</span></div>
+        <div class="guide-row"><span>1 / 2 鍵</span><span class="guide-key">防禦塔 / 軍隊選單</span></div>
+        <div class="guide-row"><span>F 鍵</span><span class="guide-key">切換部隊戰術 (護衛/駐守/自由)</span></div>
+        <div class="guide-row"><span>Tab 鍵</span><span class="guide-key">切換詳細面板說明</span></div>
+      </div>
+
+      <button id="start-game-btn" class="play-btn" onclick="joinBattleFromLobby()">⚔️ 加入戰局 (ENTER BATTLE)</button>
+    </div>
+  </div>
+
+  <!-- 左側 HUD 狀態面板 -->
+  <div class="hud-card">
+    <div class="hud-stat">
+      <span>💰 金幣</span>
+      <span id="ui-gold" class="stat-val" style="color: var(--warning);">250</span>
+    </div>
+    <div class="hud-stat">
+      <span>🏰 核心血量</span>
+      <span id="ui-core-hp-text" class="stat-val" style="color: var(--danger);">未放置 (按E)</span>
+    </div>
+    <div class="hp-bar-bg"><div id="ui-core-hp-bar" class="hp-bar-fill" style="width: 0%;"></div></div>
+    <div class="hud-stat" style="margin-top: 6px;">
+      <span>⚔️ 軍隊數量</span>
+      <span id="ui-army-count" class="stat-val" style="color: var(--primary);">0</span>
+    </div>
+    <div class="hud-stat">
+      <span>🚩 軍隊模式</span>
+      <span id="ui-army-mode" class="stat-val" style="color: var(--success);">跟隨</span>
+    </div>
+  </div>
+
+  <!-- 🏆 右側 HUD 容器 (包含排行榜 + 聯盟面板) -->
+  <div class="right-hud-panel">
+    <!-- 排行榜面板 -->
+    <div class="leaderboard-card">
+      <div class="lb-header">
+        <span>🏆 指揮官排行榜</span>
+        <span id="ui-player-count" style="color: var(--primary);">1 在線</span>
+      </div>
+      <div id="leaderboard-list"></div>
+    </div>
+
+    <!-- 🛡️ 聯盟 / 組隊系統面板 -->
+    <div class="alliance-card">
+      <div id="alliance-create-box">
+        <div style="font-size: 12px; font-weight: bold; color: var(--primary); margin-bottom: 6px;">🛡️ 聯盟 / 部落組隊</div>
+        <div class="alliance-input-row">
+          <input type="text" id="alliance-name-input" class="name-input" style="padding: 4px 8px; font-size: 12px; width: 100%;" placeholder="聯盟名稱..." maxlength="10">
+          <button class="alliance-btn" onclick="createAllianceFromUI()">創立</button>
+        </div>
+      </div>
+      <div id="alliance-info-box" style="display: none; align-items: center; justify-content: space-between;">
+        <span id="alliance-display-name" style="font-size: 13px; font-weight: bold; color: var(--primary);">🛡️ 聯盟：無</span>
+        <button class="alliance-btn leave-btn" onclick="leaveAllianceFromUI()">退出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🤝 組隊邀請彈窗 -->
+  <div id="invite-modal">
+    <div class="invite-box">
+      <h3>🛡️ 收到組隊邀請</h3>
+      <p id="invite-msg">指揮官邀請你加入聯盟</p>
+      <div style="display: flex; gap: 12px;">
+        <button class="alliance-btn" onclick="respondInvite(true)">同意加入</button>
+        <button class="alliance-btn leave-btn" onclick="respondInvite(false)">拒絕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部控制列 -->
+  <div id="controls-bar">
+    <button id="btn-back" class="key-btn back-btn" onclick="exitSubMenu()" style="display: none;">
+      <span class="key-badge">~</span> <span>返回 / 退出</span>
+    </button>
+    <button id="btn-core" class="key-btn" onclick="triggerMenuKey('E')">
+      <span class="key-badge">E</span> <span id="label-e">建基地</span>
+    </button>
+    <button id="btn-menu1" class="key-btn" onclick="triggerMenuKey('1')">
+      <span class="key-badge">1</span> <span id="label-1">防禦塔選單</span>
+    </button>
+    <button id="btn-menu2" class="key-btn" onclick="triggerMenuKey('2')">
+      <span class="key-badge">2</span> <span id="label-2">軍隊徵召選單</span>
+    </button>
+    <button id="btn-f" class="key-btn" onclick="triggerMenuKey('F')">
+      <span class="key-badge">F</span> <span>切換軍隊模式</span>
+    </button>
+  </div>
+
+  <div id="game-over-modal">
+    <h1>CORE DESTROYED</h1>
+    <p style="color: #9ca3af;">你的基地已被摧毀，試著重新佈局戰術吧！</p>
+    <button class="restart-btn" onclick="restartGame()">重新開始</button>
+  </div>
+</div>
+
+<script>
+  function autoScaleGame() {
+    const wrapper = document.getElementById('game-wrapper');
+    if (!wrapper) return;
+    const scale = Math.min((window.innerWidth * 0.95) / 1200, (window.innerHeight * 0.95) / 800);
+    wrapper.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', autoScaleGame);
+  window.addEventListener('DOMContentLoaded', autoScaleGame);
+  autoScaleGame();
+</script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
