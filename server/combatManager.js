@@ -260,7 +260,6 @@ function updateGameTick(gameState, counters, io) {
 
   Object.values(gameState.players).forEach(p => {
     if (p.isOnline && !p.isDead) {
-      // 🟢 1. 計算軍隊總負重減速
       let totalWeight = 0;
       (p.army || []).forEach(s => {
         totalWeight += (s.type === 'HEAVY' ? CONFIG.SOLDIER.HEAVY.WEIGHT : CONFIG.SOLDIER.BASIC.WEIGHT);
@@ -284,12 +283,15 @@ function updateGameTick(gameState, counters, io) {
       const deltaX = p.x - oldX;
       const deltaY = p.y - oldY;
 
-      // 🟢 2. 護衛部隊鎖步跟隨（Lockstep）：同步位移，消除拖尾延遲感
+      // 護衛部隊 Lockstep 鎖步平移（距離玩家 180px 內生效）
       if (deltaX !== 0 || deltaY !== 0) {
         p.army.forEach(s => {
-          if ((s.state === 'GUARD' || !s.state) && !s.targetId && !s.returning) {
-            s.x += deltaX;
-            s.y += deltaY;
+          if ((s.state === 'GUARD' || !s.state) && !s.targetId) {
+            const distToPlayer = Math.hypot(p.x - s.x, p.y - s.y);
+            if (distToPlayer < 180) {
+              s.x += deltaX;
+              s.y += deltaY;
+            }
           }
         });
       }
@@ -507,15 +509,23 @@ function updateGameTick(gameState, counters, io) {
         const orbitY = player.y + Math.sin(angle) * ringRadius;
         const distToOrbit = Math.hypot(orbitX - s.x, orbitY - s.y);
 
+        // 1. 歸隊完成判定 (回到自己的 orbit 站位點 15px 內)
         if (s.returning) {
-          if (distToOrbit < 15 || Math.hypot(player.x - s.x, player.y - s.y) < ringRadius + 15) {
+          if (distToOrbit < 15) {
             s.returning = false;
           }
         }
 
+        // 2. 護衛動態離身邊界檢查：超過站位 250px (例如玩家走遠)，強制放棄目標回防
+        if (distToOrbit > 250) {
+          s.targetId = null;
+          s.returning = true;
+        }
+
         let target = null;
         if (!s.returning) {
-          const inRange = attackables.filter(c => Math.hypot(c.x - s.x, c.y - s.y) <= 180);
+          // 3. 視線限制：只尋找小兵周圍 150px 內的敵人
+          const inRange = attackables.filter(c => Math.hypot(c.x - s.x, c.y - s.y) <= 150);
           if (inRange.length > 0) {
             target = inRange.find(c => c.id === s.targetId) || inRange[0];
             s.targetId = target.id;
@@ -535,40 +545,71 @@ function updateGameTick(gameState, counters, io) {
 
           if (target.ref.hp <= 0) {
             s.targetId = null;
-            if (Math.hypot(player.x - s.x, player.y - s.y) > ringRadius + 15) {
+            if (distToOrbit > 15) {
               s.returning = true;
             }
           }
         } else {
           s.targetId = null;
-          if (distToOrbit > 2) {
-            const moveSpeed = Math.min(distToOrbit * 5.0, s.speed + 60);
-            s.x += ((orbitX - s.x) / distToOrbit) * moveSpeed * dt;
-            s.y += ((orbitY - s.y) / distToOrbit) * moveSpeed * dt;
+          // 4. 陣形跟隨與步長截斷
+          if (distToOrbit > 0.5) {
+            const catchUpFactor = 1.1 + Math.min(0.25, (distToOrbit / 300) * 0.25);
+            const maxSpeed = s.speed * catchUpFactor;
+            const step = Math.min(distToOrbit, maxSpeed * dt);
+            s.x += ((orbitX - s.x) / distToOrbit) * step;
+            s.y += ((orbitY - s.y) / distToOrbit) * step;
           }
         }
       });
       ringRadius += 22;
     });
 
+    // 🟢 FREE 自由模式：動態目標切換 (敵人靠近 40px 以上自動換標)
     player.army.filter(s => s.state === 'FREE').forEach(s => {
-      let target = null;
-      let minDist = Infinity;
+      let closestTarget = null;
+      let minDistance = Infinity;
+
       attackables.forEach(c => {
         const d = Math.hypot(c.x - s.x, c.y - s.y);
-        if (d < minDist) { minDist = d; target = c; }
+        if (d < minDistance) {
+          minDistance = d;
+          closestTarget = c;
+        }
       });
 
-      if (target) {
-        if (minDist > 20) {
-          s.x += ((target.x - s.x) / minDist) * s.speed * dt;
-          s.y += ((target.y - s.y) / minDist) * s.speed * dt;
+      let activeTarget = null;
+      if (s.targetId) {
+        const currentTarget = attackables.find(c => c.id === s.targetId);
+        if (currentTarget) {
+          const currentDist = Math.hypot(currentTarget.x - s.x, currentTarget.y - s.y);
+          // 若出現比當前目標更近 40px 以上的新敵人，切換目標；否則繼續追當前目標
+          if (closestTarget && closestTarget.id !== s.targetId && (currentDist - minDistance >= 40)) {
+            activeTarget = closestTarget;
+            s.targetId = closestTarget.id;
+          } else {
+            activeTarget = currentTarget;
+            minDistance = currentDist;
+          }
         } else {
-          applyDamage(gameState, target, s.atk * 2.0 * dt, player.id);
+          activeTarget = closestTarget;
+          s.targetId = closestTarget ? closestTarget.id : null;
+        }
+      } else {
+        activeTarget = closestTarget;
+        s.targetId = closestTarget ? closestTarget.id : null;
+      }
+
+      if (activeTarget) {
+        if (minDistance > 20) {
+          s.x += ((activeTarget.x - s.x) / minDistance) * s.speed * dt;
+          s.y += ((activeTarget.y - s.y) / minDistance) * s.speed * dt;
+        } else {
+          applyDamage(gameState, activeTarget, s.atk * 2.0 * dt, player.id);
         }
       }
     });
 
+    // 🟢 HOLD 駐守模式：只攻擊駐守點 (anchor) 180px 範圍內的敵人
     player.army.filter(s => s.state === 'HOLD').forEach(s => {
       const anchorX = s.anchorX || s.x;
       const anchorY = s.anchorY || s.y;
@@ -578,13 +619,14 @@ function updateGameTick(gameState, counters, io) {
       attackables.forEach(c => {
         const dFromAnchor = Math.hypot(c.x - anchorX, c.y - anchorY);
         const dFromSoldier = Math.hypot(c.x - s.x, c.y - s.y);
-        if (dFromAnchor < 180 && dFromSoldier < minDist) {
+        if (dFromAnchor <= 180 && dFromSoldier < minDist) {
           minDist = dFromSoldier;
           target = c;
         }
       });
 
       if (target) {
+        s.targetId = target.id;
         if (minDist > 20) {
           s.x += ((target.x - s.x) / minDist) * s.speed * dt;
           s.y += ((target.y - s.y) / minDist) * s.speed * dt;
@@ -592,13 +634,15 @@ function updateGameTick(gameState, counters, io) {
           applyDamage(gameState, target, s.atk * 2.0 * dt, player.id);
         }
       } else {
+        s.targetId = null;
         const dx = anchorX - s.x;
         const dy = anchorY - s.y;
         const dist = Math.hypot(dx, dy);
-        if (dist > 2) {
+        if (dist > 0.5) {
           const moveSpeed = Math.min(dist * 6.0, s.speed);
-          s.x += (dx / dist) * moveSpeed * dt;
-          s.y += (dy / dist) * moveSpeed * dt;
+          const step = Math.min(dist, moveSpeed * dt);
+          s.x += (dx / dist) * step;
+          s.y += (dy / dist) * step;
         }
       }
     });
