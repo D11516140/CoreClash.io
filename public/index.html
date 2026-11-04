@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CoreClash.io - Cyber RTS</title>
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
 
@@ -49,6 +49,10 @@
       <span>⚔️ 軍隊數量</span>
       <span id="ui-army-count" class="stat-val" style="color: var(--primary);">0</span>
     </div>
+    <div class="hud-stat" style="margin-top: 2px;">
+      <span>⚡ 移動速度</span>
+      <span id="ui-move-speed" class="stat-val" style="color: var(--success);">100%</span>
+    </div>
     <div class="hud-stat">
       <span>🚩 軍隊模式</span>
       <span id="ui-army-mode" class="stat-val" style="color: var(--success);">跟隨</span>
@@ -57,7 +61,6 @@
 
   <!-- 🏆 右側 HUD 容器 (頁籤式排行榜) -->
   <div class="right-hud-panel">
-    <!-- 排行榜面板 -->
     <div class="leaderboard-card">
       <div class="lb-header">
         <div class="lb-tabs">
@@ -208,8 +211,8 @@
   autoScaleGame();
 </script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/ui.js?v=4"></script>
-<script src="js/render.js?v=4"></script>
-<script src="game.js?v=4"></script>
+<script src="js/ui.js?v=5"></script>
+<script src="js/render.js?v=5"></script>
+<script src="game.js?v=5"></script>
 </body>
 </html>

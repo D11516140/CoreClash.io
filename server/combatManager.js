@@ -260,10 +260,39 @@ function updateGameTick(gameState, counters, io) {
 
   Object.values(gameState.players).forEach(p => {
     if (p.isOnline && !p.isDead) {
-      p.x += p.dirX * CONFIG.COMMANDER.SPEED * dt;
-      p.y += p.dirY * CONFIG.COMMANDER.SPEED * dt;
+      // 🟢 1. 計算軍隊總負重減速
+      let totalWeight = 0;
+      (p.army || []).forEach(s => {
+        totalWeight += (s.type === 'HEAVY' ? CONFIG.SOLDIER.HEAVY.WEIGHT : CONFIG.SOLDIER.BASIC.WEIGHT);
+      });
+
+      const maxSlowWeight = CONFIG.COMMANDER.SLOWDOWN_TARGET_WEIGHT || 70;
+      const minRatio = CONFIG.COMMANDER.MIN_SPEED_RATIO || 0.4;
+      const weightRatio = Math.min(1.0, totalWeight / maxSlowWeight);
+      const speedRatio = Math.max(minRatio, 1.0 - weightRatio * (1.0 - minRatio));
+      p.speedRatio = speedRatio;
+
+      const currentSpeed = CONFIG.COMMANDER.SPEED * speedRatio;
+      const oldX = p.x;
+      const oldY = p.y;
+
+      p.x += p.dirX * currentSpeed * dt;
+      p.y += p.dirY * currentSpeed * dt;
       p.x = Math.max(bounds.minX + 15, Math.min(bounds.maxX - 15, p.x));
       p.y = Math.max(bounds.minY + 15, Math.min(bounds.maxY - 15, p.y));
+
+      const deltaX = p.x - oldX;
+      const deltaY = p.y - oldY;
+
+      // 🟢 2. 護衛部隊鎖步跟隨（Lockstep）：同步位移，消除拖尾延遲感
+      if (deltaX !== 0 || deltaY !== 0) {
+        p.army.forEach(s => {
+          if ((s.state === 'GUARD' || !s.state) && !s.targetId && !s.returning) {
+            s.x += deltaX;
+            s.y += deltaY;
+          }
+        });
+      }
 
       if (tickCount % CONFIG.TICK_RATE === 0 && tickCount - p.lastHitTick > outOfCombatTicks && p.hp < p.maxHp) {
         const healAmt = Math.min(CONFIG.COMMANDER.REGEN_HP, p.maxHp - p.hp);
@@ -277,7 +306,6 @@ function updateGameTick(gameState, counters, io) {
         gameState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: `+${displayHeal}`, color: '#00ff66' });
       }
 
-      // 🟢 僅在玩家在線時計算生存時間（離線時經驗時長凍結）
       if (p.core && p.core.hp > 0) {
         p.survivalTime += dt;
       }
@@ -362,7 +390,6 @@ function updateGameTick(gameState, counters, io) {
     }
   });
 
-  // 🟢 20 秒檢查更新一次積分 (20 * 60 ticks)
   if (tickCount % (CONFIG.TICK_RATE * 20) === 0 || tickCount === 1) {
     Object.values(gameState.players).forEach(p => {
       p.score = calculatePlayerScore(gameState, p).total;

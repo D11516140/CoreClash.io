@@ -467,6 +467,18 @@ function updateHUD(state) {
     }
     document.getElementById('ui-army-count').innerText = me.army.length;
 
+    // 🟢 移動速度顯示與四段變色 (80%+ 綠 / 51-80% 黃 / 21-50% 紅 / <=20% 暗紅)
+    const speedEl = document.getElementById('ui-move-speed');
+    if (speedEl) {
+      const ratio = me.speedRatio !== undefined ? me.speedRatio : 1.0;
+      const pct = Math.round(ratio * 100);
+      speedEl.innerText = `${pct}%`;
+      if (pct > 80) speedEl.style.color = '#00ff66';
+      else if (pct >= 51) speedEl.style.color = '#ffb700';
+      else if (pct >= 21) speedEl.style.color = '#ff0055';
+      else speedEl.style.color = '#800000'; // 暗紅警戒色
+    }
+
     const modeEl = document.getElementById('ui-army-mode');
     if (modeEl) {
       if (me.armyState === 'FREE') { modeEl.innerText = '⚔️ 自由 (FREE)'; modeEl.style.color = '#ffb700'; }

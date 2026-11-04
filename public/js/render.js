@@ -43,8 +43,6 @@ function drawTooltipScreen(ctx, sx, sy, title, titleColor, basicItems, advancedI
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 
-  activeTooltipButtons = [];
-
   const items = showDetailedInfo ? [...basicItems, ...advancedItems] : basicItems;
   const footerText = showDetailedInfo ? '[Tab] 顯示更少資訊' : '[Tab] 顯示更多資訊';
 
@@ -154,6 +152,8 @@ function drawTooltipScreen(ctx, sx, sy, title, titleColor, basicItems, advancedI
 
 // 🎨 主畫面渲染函式
 function drawGameScene(state) {
+  activeTooltipButtons = []; // 每幀開始時重置點擊按鈕陣列
+
   const bounds = state.mapBounds || { minX: 0, maxX: 1600, minY: 0, maxY: 1200, width: 1600, height: 1200, buffer: 600 };
   const currentTick = state.tickCount || 0;
   const me = state.players[myPlayerId];
@@ -557,7 +557,13 @@ function drawGameScene(state) {
           const isAdv = t.type === 'ADVANCED';
           const isSelf = t.ownerId === myPlayerId;
           const isAlly = me && me.allianceId && state.players[t.ownerId] && state.players[t.ownerId].allianceId === me.allianceId;
-          const refundG = isAdv ? 140 : 70;
+
+          // 🟢 前端安全動態計算賣出殘值與百分比
+          const maxRefund = isAdv ? 140 : 70;
+          const maxHp = t.maxHp || 500;
+          const hpRatio = Math.max(0, Math.min(1.0, t.hp / maxHp));
+          const refundG = Math.floor(maxRefund * hpRatio);
+          const hpPct = Math.round(hpRatio * 100);
 
           const actions = [];
           if ((isSelf || isAlly) && t.hp < t.maxHp) {
@@ -575,7 +581,7 @@ function drawGameScene(state) {
 
           if (isSelf) {
             actions.push({
-              label: `💰 賣出 (+${refundG}G)`,
+              label: `💰 賣出 (+${refundG}G, 殘值${hpPct}%)`,
               hoverColor: 'rgba(255, 0, 85, 0.3)',
               borderColor: 'rgba(255, 0, 85, 0.6)',
               textColor: '#ff4d4d',
@@ -613,7 +619,13 @@ function drawGameScene(state) {
           const isHeavy = foundSoldier.type === 'HEAVY';
           const isSelf = ownerP && ownerP.id === myPlayerId;
           const isNeutral = !ownerP;
-          const refundG = isHeavy ? 84 : 35;
+
+          // 🟢 前端安全動態計算賣出殘值與百分比
+          const maxRefund = isHeavy ? 84 : 35;
+          const maxHp = foundSoldier.maxHp || (isHeavy ? 280 : 100);
+          const hpRatio = Math.max(0, Math.min(1.0, foundSoldier.hp / maxHp));
+          const refundG = Math.floor(maxRefund * hpRatio);
+          const hpPct = Math.round(hpRatio * 100);
 
           const actions = [];
           if (isSelf) {
@@ -630,7 +642,7 @@ function drawGameScene(state) {
               });
             }
             actions.push({
-              label: `💰 賣出 (+${refundG}G)`,
+              label: `💰 賣出 (+${refundG}G, 殘值${hpPct}%)`,
               hoverColor: 'rgba(255, 0, 85, 0.3)',
               borderColor: 'rgba(255, 0, 85, 0.6)',
               textColor: '#ff4d4d',

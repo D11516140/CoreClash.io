@@ -92,7 +92,8 @@ io.on('connection', (socket) => {
         isOnline: true,
         survivalTime: 0,
         spawnTimerSec: 0,
-        raidTimerSec: 0
+        raidTimerSec: 0,
+        speedRatio: 1.0
       };
     } else {
       const player = gameState.players[pid];
@@ -104,7 +105,6 @@ io.on('connection', (socket) => {
     updateMapBounds();
   });
 
-  // 🛡️ 聯盟相關事件分發
   socket.on('createAlliance', (name) => allianceMgr.createAlliance(gameState, socket, name, counters));
   socket.on('setRecruitmentMode', (mode) => allianceMgr.setRecruitmentMode(gameState, socket, mode));
   socket.on('applyToAlliance', (id) => allianceMgr.applyToAlliance(gameState, socket, id));
@@ -117,7 +117,6 @@ io.on('connection', (socket) => {
   socket.on('respondAllianceApplication', (data) => allianceMgr.respondAllianceApplication(gameState, socket, data));
   socket.on('leaveAlliance', () => allianceMgr.leaveAlliance(gameState, socket));
 
-  // ⚔️ 玩家建設與動作事件
   socket.on('repairTower', (towerId) => {
     const player = gameState.players[socket.playerId];
     if (!player || player.isDead) return;
@@ -236,6 +235,7 @@ io.on('connection', (socket) => {
     });
   });
 
+  // 🟢 賣塔：損壞殘值嚴格計算 + 防 NaN
   socket.on('sellTower', (towerId) => {
     const player = gameState.players[socket.playerId];
     if (!player || player.isDead) return;
@@ -244,9 +244,20 @@ io.on('connection', (socket) => {
     if (idx !== -1) {
       const t = gameState.towers[idx];
       const cfg = t.type === 'ADVANCED' ? CONFIG.TOWER.ADVANCED : CONFIG.TOWER.BASIC;
-      player.gold += cfg.REFUND;
+      const maxHp = t.maxHp || cfg.HP;
+      const hpRatio = Math.max(0, Math.min(1.0, t.hp / maxHp));
+      const refund = Math.floor(cfg.REFUND * hpRatio);
+      const hpPct = Math.round(hpRatio * 100);
+
+      player.gold += refund;
       gameState.events.push({ type: 'EXPLOSION', x: t.x, y: t.y, color: '#00f0ff', count: 8 });
-      gameState.events.push({ type: 'FLOAT_TEXT', x: t.x, y: t.y - 15, text: `+${cfg.REFUND}G`, color: '#ffb700', forPlayerId: player.id });
+      gameState.events.push({
+        type: 'FLOAT_TEXT',
+        x: t.x, y: t.y - 15,
+        text: `+${refund}G (殘值${hpPct}%)`,
+        color: '#ffb700',
+        forPlayerId: player.id
+      });
       gameState.towers.splice(idx, 1);
     }
   });
@@ -287,21 +298,24 @@ io.on('connection', (socket) => {
     const s = player.army.find(item => item.id === soldierId);
     if (!s || s.hp >= s.maxHp) return;
 
-    const missingHpRatio = (s.maxHp - s.hp) / s.maxHp;
+    const maxHp = s.maxHp || (s.type === 'HEAVY' ? CONFIG.SOLDIER.HEAVY.HP : CONFIG.SOLDIER.BASIC.HP);
+    const missingHpRatio = (maxHp - s.hp) / maxHp;
     const cfg = s.type === 'HEAVY' ? CONFIG.SOLDIER.HEAVY : CONFIG.SOLDIER.BASIC;
     const cost = Math.max(5, Math.ceil(cfg.HEAL_MAX_COST * missingHpRatio));
 
     if (player.gold < cost) return;
 
     player.gold -= cost;
-    const healedAmt = Math.ceil(s.maxHp - s.hp);
-    s.hp = s.maxHp;
+    const healedAmt = Math.ceil(maxHp - s.hp);
+    s.hp = maxHp;
+    s.maxHp = maxHp;
     s.lastFullHpTick = null;
 
     gameState.events.push({ type: 'EXPLOSION', x: s.x, y: s.y, color: '#00ff66', count: 10 });
     gameState.events.push({ type: 'FLOAT_TEXT', x: s.x, y: s.y - 15, text: `+${healedAmt}`, color: '#00ff66', forPlayerId: player.id });
   });
 
+  // 🟢 賣兵：損壞殘值嚴格計算 + 防 NaN
   socket.on('sellSoldier', (soldierId) => {
     const player = gameState.players[socket.playerId];
     if (!player || player.isDead) return;
@@ -310,9 +324,20 @@ io.on('connection', (socket) => {
     if (idx !== -1) {
       const s = player.army[idx];
       const cfg = s.type === 'HEAVY' ? CONFIG.SOLDIER.HEAVY : CONFIG.SOLDIER.BASIC;
-      player.gold += cfg.REFUND;
+      const maxHp = s.maxHp || cfg.HP;
+      const hpRatio = Math.max(0, Math.min(1.0, s.hp / maxHp));
+      const refund = Math.floor(cfg.REFUND * hpRatio);
+      const hpPct = Math.round(hpRatio * 100);
+
+      player.gold += refund;
       gameState.events.push({ type: 'EXPLOSION', x: s.x, y: s.y, color: '#00f0ff', count: 6 });
-      gameState.events.push({ type: 'FLOAT_TEXT', x: s.x, y: s.y - 15, text: `+${cfg.REFUND}G`, color: '#ffb700', forPlayerId: player.id });
+      gameState.events.push({
+        type: 'FLOAT_TEXT',
+        x: s.x, y: s.y - 15,
+        text: `+${refund}G (殘值${hpPct}%)`,
+        color: '#ffb700',
+        forPlayerId: player.id
+      });
       player.army.splice(idx, 1);
     }
   });
@@ -372,10 +397,10 @@ io.on('connection', (socket) => {
       player.survivalTime = 0;
       player.spawnTimerSec = 0;
       player.raidTimerSec = 0;
+      player.speedRatio = 1.0;
     }
   });
 
-  // 🟢 回到大廳處理：重置狀態並離隊
   socket.on('returnToLobby', () => {
     const player = gameState.players[socket.playerId];
     if (player) {
@@ -393,6 +418,7 @@ io.on('connection', (socket) => {
       player.survivalTime = 0;
       player.spawnTimerSec = 0;
       player.raidTimerSec = 0;
+      player.speedRatio = 1.0;
     }
   });
 
@@ -410,7 +436,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// 🔄 Tick 遊戲主迴圈
 setInterval(() => {
   combatMgr.updateGameTick(gameState, counters, io);
 }, 1000 / CONFIG.TICK_RATE);
