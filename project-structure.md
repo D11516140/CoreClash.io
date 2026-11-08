@@ -31,30 +31,31 @@ CoreClash.io/
 │   │   └── style.css          # UI 賽博風格樣式 (🟢 獨立大廳大卡片佈局、:active 視覺按鈕反饋、Cyber Toast 浮窗)
 │   ├── js/
 │   │   ├── render.js          # Canvas 繪圖核心 (🟢 0.8s 受擊紅光閃爍、傷害飄字、預建築精準提示)
-│   │   └── ui.js              # 介面與彈窗模組 (🟢 階層 UI 控制、聯盟前 3 名成員預覽、Cyber Toast 浮窗、選色器)
-│   ├── game.js                # 前端通訊與主控台 (🟢 連續建造模式、階層選單取消、DOM矩形快取、rAF純繪圖迴圈)
+│   │   ├── ui.js              # 介面與彈窗模組 (🟢 暱稱本地快取、階層 UI 控制、聯盟前 3 名成員預覽、Cyber Toast 浮窗)
+│   │   └── game.js            # 前端通訊與主控台 (🟢 連續建造模式、階層選單取消、DOM矩形快取、rAF純繪圖迴圈)
 │   └── index.html             # 主頁面 DOM 結構 (🟢 置中 LOGO、三卡片大廳、代表色選色器)
-├── server/                    # 伺服器端核心邏輯
+├── server/                    # 伺服器端核心模組
 │   ├── config.js              # 常數配置 (🟢 初級/重裝兵負重 1/2、怪物半徑、動態懸賞與分數權重)
 │   ├── combatManager.js       # 戰鬥與 AI 核心 (🟢 0.8s 冷卻傷害算式、怪物卡位切換仇恨、全域實體推擠)
-│   ├── allianceManager.js     # 聯盟機制 (🟢 創立/加入/招募模式/特邀與挖腳邏輯)
-│   └── server.js              # 伺服器入口 (🟢 Socket 事件處理、賣出/修復殘值安全結算、防 NaN 保護)
+│   └── allianceManager.js     # 聯盟機制 (🟢 創立/加入/招募模式/特邀與挖腳邏輯)
+├── server.js                  # 伺服器入口 (🟢 延遲改名 pendingName 機制、賣出/修復殘值安全結算、防 NaN 保護)
 └── project-structure.md       # 專案架構與開發維護筆記
 
 ---
 
 ## ⚙️ 三、 模組實作與戰術細節紀錄
 
-### 1. 獨立遊戲規格主畫面大廳 (Main Menu & Player Identity)
+### 1. 獨立遊戲規格主畫面大廳與身份管理 (Main Menu & Player Identity)
 * **主視覺與置中 LOGO**：
   * 大廳極簡化排版，頂部左側 [💬 反饋]、右側 [v0.4.0 Alpha] 版本號，正中央放上巨大的 Neon 風格 LOGO 與副標題。
 * **三卡片模式選擇 (`.mode-cards-container`)**：
-  * `⚔️ PVP 戰場`：點擊立即讀取暱稱與代表色加入對局。
-  * `🧪 沙盒訓練場` / `📖 新手教學`：點擊觸發動態 Cyber Toast 提示（"🚧 即將開放！"），並具備 Hover 向上浮動與 Click 縮放點擊反饋。
-* **指揮官個人檔案 (Player Profile)**：
-  * 左下角常駐身份卡片，包含暱稱輸入框與 5 色選擇器（藍/綠/黃/粉/紅），選擇自動快取至 localStorage。
+  * `⚔️ PVP 戰場`：點擊發送暱稱與代表色加入對局。
+  * `🧪 沙盒訓練場` / `📖 新手教學`：規劃採取純前端 (Client-Side) 獨立運行，避免伺服器多開 Tick 迴圈負載。
+* **指揮官個人檔案與延遲改名機制 (Delayed Nickname Update)**：
+  * 左下角常駐身份卡片，含暱稱輸入框與 5 色選擇器（藍/綠/黃/粉/紅），選擇與暱稱自動快取至 `localStorage`。
+  * **下回合生效邏輯**：玩家在大廳改名僅更新伺服器端 `pendingName`。若當前戰局中尚有存活實體/基地，`name` 將保持鎖定；僅在 **建基地 (`placeCore`)** 或 **重新開始 (`restartGame`)** 時才同步將 `pendingName` 更新至 `name`。
 * **系統動作 (Settings & Exit)**：
-  * 右下角提供 `[ ⚙️ 設定 ]` 與 `[ 🚪 離開 ]` 按鈕，點擊離開跳出確認 Modal 後安全斷開或導向。
+  * 右下角提供 `[ ⚙️ 設定 ]` 與 `[ 🚪 離開 ]` 按鈕，點擊離開跳出確認 Modal 後安全斷開。
 
 ### 2. DOM 與效能優化 (Performance Caching & Event Loop)
 * **Canvas 矩形快取 (`cachedCanvasRect`)**：
@@ -95,7 +96,7 @@ CoreClash.io/
 
 ### 1. 核心 `gameState` 物件結構
 * `tickCount`: 伺服器 60FPS 累計 Tick 數。
-* `players`: `{ [playerId]: { id, name, gold, hp, maxHp, x, y, speedRatio, armyState, allianceId, core: {...}, army: [...] } }`
+* `players`: `{ [playerId]: { id, name, pendingName, gold, hp, maxHp, x, y, speedRatio, armyState, allianceId, core: {...}, army: [...] } }`
 * `towers`: `[ { id, ownerId, type, x, y, hp, maxHp, range, atk, cooldownSec } ]`
 * `monsters`: `[ { id, targetPlayerId, x, y, hp, maxHp, atk, speed, isRaid } ]`
 * `neutralSoldiers`: `[ { id, x, y, hp, maxHp, atk, speed, type } ]`
@@ -105,9 +106,9 @@ CoreClash.io/
 ### 2. 關鍵 Socket 指令對照表
 | Socket 事件名稱 | 觸發來源 | 帶入參數 (Payload) | 說明 |
 | :--- | :--- | :--- | :--- |
-| `joinGame` | 前端 $\rightarrow$ 伺服器 | `{ persistentId, nickname, color }` | 登入/連線遊戲並傳送選色 |
+| `joinGame` | 前端 $\rightarrow$ 伺服器 | `{ persistentId, nickname, color }` | 登入並帶入 `pendingName` 預備暱稱 |
 | `playerInput` | 前端 $\rightarrow$ 伺服器 | `{ w, a, s, d }` | 60FPS 傳送移動鍵盤狀態 |
-| `placeCore` | 前端 $\rightarrow$ 伺服器 | `{ x, y }` | 放置初始基地核心 |
+| `placeCore` | 前端 $\rightarrow$ 伺服器 | `{ x, y }` | 放置初始基地核心（同步將 `pendingName` 套用至 `name`） |
 | `buyTower` | 前端 $\rightarrow$ 伺服器 | `{ x, y, type }` | 建造防禦塔 (`BASIC` / `ADVANCED`) |
 | `repairTower` | 前端 $\rightarrow$ 伺服器 | `towerId` | 修復防禦塔 |
 | `sellTower` | 前端 $\rightarrow$ 伺服器 | `towerId` | 依殘值賣出防禦塔 |

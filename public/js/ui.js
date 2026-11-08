@@ -60,7 +60,7 @@ function selectPlayerColor(color, el) {
 }
 window.selectPlayerColor = selectPlayerColor;
 
-// 初始化代表色 UI 狀態
+// 初始化代表色與暱稱 UI 狀態
 window.addEventListener('DOMContentLoaded', () => {
   const savedColor = localStorage.getItem('corewar_player_color') || '#ffb700';
   selectedPlayerColor = savedColor;
@@ -71,6 +71,12 @@ window.addEventListener('DOMContentLoaded', () => {
       dot.classList.remove('active');
     }
   });
+
+  const savedName = localStorage.getItem('corewar_player_name');
+  if (savedName) {
+    const nickInput = document.getElementById('nickname-input');
+    if (nickInput) nickInput.value = savedName;
+  }
 });
 
 // 🚪 離開遊戲動作

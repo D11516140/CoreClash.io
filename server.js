@@ -57,6 +57,7 @@ function updateMapBounds() {
 }
 
 io.on('connection', (socket) => {
+  // 🟢 加入遊戲與暱稱處理 (引進 pendingName 延遲生效)
   socket.on('joinGame', (payload) => {
     let pid, nickname;
     if (payload && typeof payload === 'object') {
@@ -68,11 +69,14 @@ io.on('connection', (socket) => {
     }
     socket.playerId = pid;
 
+    const cleanName = (nickname && nickname.trim()) ? nickname.trim().substring(0, 12) : `指揮官_${pid.substring(0, 4)}`;
+
     if (!gameState.players[pid]) {
       const safePos = combatMgr.getSafePlayerSpawnPos(gameState);
       gameState.players[pid] = {
         id: pid,
-        name: nickname,
+        name: cleanName,
+        pendingName: cleanName, // 預備暱稱暫存
         socketId: socket.id,
         x: safePos.x,
         y: safePos.y,
@@ -98,8 +102,13 @@ io.on('connection', (socket) => {
     } else {
       const player = gameState.players[pid];
       player.socketId = socket.id;
-      player.name = nickname;
+      player.pendingName = cleanName; // 只將新名字放入預備區
       player.isOnline = true;
+
+      // 若玩家處於未建基地或陣亡狀態，代表當前未在活著的戰局中，直接改名
+      if (!player.core || player.isDead) {
+        player.name = cleanName;
+      }
     }
 
     updateMapBounds();
@@ -168,6 +177,7 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 🟢 放置核心 (新戰局展開 -> 套用預備暱稱)
   socket.on('placeCore', (pos) => {
     const player = gameState.players[socket.playerId];
     if (player && !player.core && !player.isDead) {
@@ -178,6 +188,11 @@ io.on('connection', (socket) => {
       const cy = Math.floor(rawY / 40) * 40 + 20;
 
       if (cx < bounds.minX + 20 || cx > bounds.maxX - 20 || cy < bounds.minY + 20 || cy > bounds.maxY - 20) return;
+
+      // ⚡ 新回合/放置基地時，同步最新預備暱稱
+      if (player.pendingName) {
+        player.name = player.pendingName;
+      }
 
       player.core = {
         id: `core_${player.id}`,
@@ -235,7 +250,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 🟢 賣塔：損壞殘值嚴格計算 + 防 NaN
   socket.on('sellTower', (towerId) => {
     const player = gameState.players[socket.playerId];
     if (!player || player.isDead) return;
@@ -315,7 +329,6 @@ io.on('connection', (socket) => {
     gameState.events.push({ type: 'FLOAT_TEXT', x: s.x, y: s.y - 15, text: `+${healedAmt}`, color: '#00ff66', forPlayerId: player.id });
   });
 
-  // 🟢 賣兵：損壞殘值嚴格計算 + 防 NaN
   socket.on('sellSoldier', (soldierId) => {
     const player = gameState.players[socket.playerId];
     if (!player || player.isDead) return;
@@ -378,11 +391,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 🟢 重新開始遊戲 (同步預備暱稱)
   socket.on('restartGame', () => {
     const player = gameState.players[socket.playerId];
     if (player) {
       const safePos = combatMgr.getSafePlayerSpawnPos(gameState);
       allianceMgr.removePlayerFromAlliance(gameState, player);
+
+      if (player.pendingName) {
+        player.name = player.pendingName;
+      }
+
       player.gold = 250;
       player.core = null;
       player.army = [];
@@ -401,12 +420,18 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 🟢 回到大廳 (同步預備暱稱)
   socket.on('returnToLobby', () => {
     const player = gameState.players[socket.playerId];
     if (player) {
       const safePos = combatMgr.getSafePlayerSpawnPos(gameState);
       allianceMgr.removePlayerFromAlliance(gameState, player);
       combatMgr.convertArmyToNeutral(gameState, player);
+
+      if (player.pendingName) {
+        player.name = player.pendingName;
+      }
+
       player.gold = 250;
       player.core = null;
       player.army = [];
