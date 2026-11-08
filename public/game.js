@@ -1,4 +1,4 @@
-// 🚀 game.js - 前端主控制器 (Socket 通訊、輸入監聽與流程調度)
+// 🚀 public/game.js - 前端主控制器 (Socket 通訊、沙盒分流與鏡頭跟隨)
 
 const socket = io();
 window.socket = socket;
@@ -12,14 +12,17 @@ window.buildMode = null;
 window.pinnedTooltip = null;
 window.activeTooltipButtons = [];
 
-if (typeof myPlayerId === 'undefined' || !myPlayerId) {
-  myPlayerId = localStorage.getItem('corewar_player_id');
-  if (!myPlayerId) {
-    myPlayerId = 'player_' + Math.random().toString(36).substring(2, 9);
-    localStorage.setItem('corewar_player_id', myPlayerId);
+function getPlayerId() {
+  if (!window.myPlayerId) {
+    window.myPlayerId = localStorage.getItem('corewar_player_id');
+    if (!window.myPlayerId) {
+      window.myPlayerId = 'player_' + Math.random().toString(36).substring(2, 9);
+      localStorage.setItem('corewar_player_id', window.myPlayerId);
+    }
   }
+  return window.myPlayerId;
 }
-window.myPlayerId = myPlayerId;
+window.myPlayerId = getPlayerId();
 
 const savedNickname = localStorage.getItem('corewar_player_name');
 if (savedNickname) {
@@ -34,13 +37,24 @@ document.getElementById('nickname-input')?.addEventListener('keydown', (e) => {
 });
 
 const keys = { w: false, a: false, s: false, d: false };
+window.keys = keys;
+
 const mousePos = { x: 0, y: 0 };
 const mouseScreenPos = { x: 0, y: 0 };
 let rawClientX = 0;
 let rawClientY = 0;
 let camera = { x: 800, y: 600 };
+window.camera = camera;
 
 let showDetailedInfo = false;
+
+function screenToWorld(sx, sy) {
+  return {
+    x: sx - canvas.width / 2 + camera.x,
+    y: sy - canvas.height / 2 + camera.y
+  };
+}
+window.screenToWorld = screenToWorld;
 
 function clearPinnedTooltip() {
   window.pinnedTooltip = null;
@@ -48,27 +62,30 @@ function clearPinnedTooltip() {
 }
 window.clearPinnedTooltip = clearPinnedTooltip;
 
-const particles = [];
-const floatingTexts = [];
-
-// 快取 Canvas DOM 矩形
 let cachedCanvasRect = canvas.getBoundingClientRect();
 window.addEventListener('resize', () => { cachedCanvasRect = canvas.getBoundingClientRect(); });
 window.addEventListener('scroll', () => { cachedCanvasRect = canvas.getBoundingClientRect(); });
 
+function sendAction(action, data) {
+  if (window.isSandboxActive && typeof window.handleSandboxAction === 'function') {
+    window.handleSandboxAction(action, data);
+    return;
+  }
+  if (socket.connected) socket.emit(action, data);
+}
+window.sendAction = sendAction;
+
 function triggerMenuKey(key) {
   clearPinnedTooltip();
-  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  const me = typeof window.getCurrentPlayer === 'function' ? window.getCurrentPlayer(window.lastGameState) : null;
   if (!me || me.isDead) return;
 
-  // 1. 未放置核心狀態
   if (!me.core) {
     if (key === 'E') window.buildMode = (window.buildMode === 'CORE') ? null : 'CORE';
     if (typeof updateUI === 'function') updateUI();
     return;
   }
 
-  // 2. 防禦塔選單或防禦塔建造預覽中
   if (window.activeMenu === 'TOWER_MENU' || window.buildMode === 'TOWER_BASIC' || window.buildMode === 'TOWER_ADVANCED') {
     if (key === '1') {
       window.buildMode = (window.buildMode === 'TOWER_BASIC') ? null : 'TOWER_BASIC';
@@ -81,7 +98,6 @@ function triggerMenuKey(key) {
     return;
   }
 
-  // 3. 軍隊徵召選單中
   if (window.activeMenu === 'ARMY_MENU') {
     if (key === '1') sendAction('buySoldier', 'BASIC');
     else if (key === '2') sendAction('buySoldier', 'HEAVY');
@@ -89,7 +105,6 @@ function triggerMenuKey(key) {
     return;
   }
 
-  // 4. 已有基地時的主選單
   if (key === 'E') { sendAction('teleportCore'); window.buildMode = null; }
   else if (key === '1') { window.activeMenu = 'TOWER_MENU'; window.buildMode = null; }
   else if (key === '2') { window.activeMenu = 'ARMY_MENU'; window.buildMode = null; }
@@ -99,14 +114,13 @@ function triggerMenuKey(key) {
 }
 window.triggerMenuKey = triggerMenuKey;
 
-// 階層式返回選單邏輯
 function exitSubMenu() {
-  if (window.buildMode === 'TOWER_BASIC' || window.buildMode === 'TOWER_ADVANCED') {
+  if (window.buildMode === 'TOWER_BASIC' || window.buildMode === 'TOWER_ADVANCED' || window.buildMode === 'ENEMY_TOWER_BASIC' || window.buildMode === 'ENEMY_TOWER_ADVANCED') {
     window.buildMode = null;
-    window.activeMenu = 'TOWER_MENU'; // 建造預覽時取消 -> 返回防禦塔選單
+    window.activeMenu = window.isSandboxActive ? null : 'TOWER_MENU';
   } else {
     window.activeMenu = null;
-    window.buildMode = null; // 防禦塔或軍隊選單時取消 -> 返回主介面
+    window.buildMode = null;
   }
   clearPinnedTooltip();
   if (typeof updateUI === 'function') updateUI();
@@ -133,7 +147,15 @@ canvas.addEventListener('mousedown', (e) => {
       }
     }
 
-    const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+    if (window.buildMode === 'ENEMY_TOWER_BASIC') {
+      sendAction('placeEnemyTower', { x: mousePos.x, y: mousePos.y, type: 'BASIC' });
+      return;
+    } else if (window.buildMode === 'ENEMY_TOWER_ADVANCED') {
+      sendAction('placeEnemyTower', { x: mousePos.x, y: mousePos.y, type: 'ADVANCED' });
+      return;
+    }
+
+    const me = typeof window.getCurrentPlayer === 'function' ? window.getCurrentPlayer(window.lastGameState) : null;
     if (!me || me.isDead) return;
 
     if (window.buildMode === 'CORE' && !me.core) {
@@ -145,14 +167,12 @@ canvas.addEventListener('mousedown', (e) => {
     } else if (window.buildMode === 'TOWER_BASIC' && me.core) {
       if (me.gold >= 100) {
         sendAction('buyTower', { x: mousePos.x, y: mousePos.y, type: 'BASIC' });
-        // 保持 buildMode === 'TOWER_BASIC'，實現連續建造！
         if (typeof updateUI === 'function') updateUI();
       }
       return;
     } else if (window.buildMode === 'TOWER_ADVANCED' && me.core) {
       if (me.gold >= 200) {
         sendAction('buyTower', { x: mousePos.x, y: mousePos.y, type: 'ADVANCED' });
-        // 保持 buildMode === 'TOWER_ADVANCED'，實現連續建造！
         if (typeof updateUI === 'function') updateUI();
       }
       return;
@@ -164,38 +184,6 @@ canvas.addEventListener('mousedown', (e) => {
   }
 });
 
-function findEntityById(id, type) {
-  if (!window.lastGameState) return null;
-  if (type === 'TOWER') {
-    const t = window.lastGameState.towers.find(item => item.id === id);
-    if (t) return { type, id, obj: t, x: t.x, y: t.y };
-  }
-  if (type === 'SOLDIER') {
-    for (const p of Object.values(window.lastGameState.players)) {
-      const s = p.army.find(item => item.id === id);
-      if (s) return { type, id, obj: s, ownerId: p.id, x: s.x, y: s.y };
-    }
-    if (window.lastGameState.neutralSoldiers) {
-      const ns = window.lastGameState.neutralSoldiers.find(item => item.id === id);
-      if (ns) return { type, id, obj: ns, x: ns.x, y: ns.y };
-    }
-  }
-  if (type === 'CORE') {
-    for (const p of Object.values(window.lastGameState.players)) {
-      if (p.core && p.core.id === id && p.core.hp > 0) return { type, id, obj: p.core, x: p.core.x, y: p.core.y };
-    }
-  }
-  if (type === 'COMMANDER') {
-    const p = window.lastGameState.players[id];
-    if (p && !p.isDead) return { type, id, obj: p, x: p.x, y: p.y };
-  }
-  if (type === 'MONSTER') {
-    const m = window.lastGameState.monsters.find(item => item.id === id);
-    if (m) return { type, id, obj: m, x: m.x, y: m.y };
-  }
-  return null;
-}
-
 function findEntityAtPos(wx, wy) {
   if (!window.lastGameState) return null;
 
@@ -203,13 +191,6 @@ function findEntityAtPos(wx, wy) {
     for (const s of p.army) {
       if (Math.hypot(wx - s.x, wy - s.y) <= (s.radius || 5) + 4) {
         return { type: 'SOLDIER', id: s.id, obj: s, ownerId: p.id, x: s.x, y: s.y };
-      }
-    }
-  }
-  if (window.lastGameState.neutralSoldiers) {
-    for (const ns of window.lastGameState.neutralSoldiers) {
-      if (Math.hypot(wx - ns.x, wy - ns.y) <= (ns.radius || 5) + 4) {
-        return { type: 'SOLDIER', id: ns.id, obj: ns, x: ns.x, y: ns.y };
       }
     }
   }
@@ -271,15 +252,13 @@ window.addEventListener('blur', () => {
 });
 
 setInterval(() => {
-  if (socket.connected) socket.emit('playerInput', keys);
+  if (socket.connected && !window.isSandboxActive) socket.emit('playerInput', keys);
 }, 1000 / 60);
-
-function sendAction(action, data) { if (socket.connected) socket.emit(action, data); }
 
 function restartGame() {
   document.getElementById('game-over-modal').style.display = 'none';
   exitSubMenu();
-  socket.emit('restartGame');
+  if (!window.isSandboxActive) socket.emit('restartGame');
 }
 window.restartGame = restartGame;
 
@@ -287,18 +266,24 @@ function returnToLobby() {
   document.getElementById('game-over-modal').style.display = 'none';
   document.getElementById('lobby-modal').style.display = 'flex';
   exitSubMenu();
-  socket.emit('returnToLobby');
+  if (window.isSandboxActive && typeof window.exitSandboxMode === 'function') {
+    window.exitSandboxMode();
+  } else {
+    socket.emit('returnToLobby');
+  }
 }
 window.returnToLobby = returnToLobby;
 
 socket.on('gameState', (state) => {
+  if (window.isSandboxActive) return;
   window.lastGameState = state;
 
   if (state.events) {
     state.events.forEach(ev => {
       if (ev.type === 'EXPLOSION') createExplosion(ev.x, ev.y, ev.color, ev.count || 12);
       if (ev.type === 'FLOAT_TEXT') {
-        if (!ev.forPlayerId || ev.forPlayerId === myPlayerId) {
+        const me = typeof window.getCurrentPlayer === 'function' ? window.getCurrentPlayer(state) : null;
+        if (!ev.forPlayerId || (me && ev.forPlayerId === me.id)) {
           addFloatingText(ev.x, ev.y, ev.text, ev.color);
         }
       }
@@ -308,13 +293,19 @@ socket.on('gameState', (state) => {
   if (typeof updateHUD === 'function') updateHUD(state);
 });
 
+// 🟢 鏡頭自動跟隨與繪圖迴圈
 function renderLoop() {
   if (window.lastGameState) {
     const state = window.lastGameState;
-    const me = state.players[myPlayerId];
+    const me = typeof window.getCurrentPlayer === 'function' ? window.getCurrentPlayer(state) : null;
 
-    if (me && !me.isDead) { camera.x = me.x; camera.y = me.y; }
-    else if (me && me.core) { camera.x = me.core.x; camera.y = me.core.y; }
+    if (me && !me.isDead) {
+      camera.x = me.x;
+      camera.y = me.y;
+    } else if (me && me.core) {
+      camera.x = me.core.x;
+      camera.y = me.core.y;
+    }
 
     mouseScreenPos.x = (rawClientX - cachedCanvasRect.left) * (canvas.width / cachedCanvasRect.width);
     mouseScreenPos.y = (rawClientY - cachedCanvasRect.top) * (canvas.height / cachedCanvasRect.height);

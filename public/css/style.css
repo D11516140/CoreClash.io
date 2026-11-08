@@ -136,7 +136,7 @@ canvas { width: 100%; height: 100%; display: block; background: #07090e; cursor:
 .color-dot:active { transform: scale(0.9); }
 .color-dot.active { border-color: #fff; transform: scale(1.25); box-shadow: 0 0 14px currentColor; }
 
-/* 🟢 通用輸入框樣式 (含聯盟名稱輸入框) */
+/* 通用輸入框樣式 */
 .name-input, .name-input-styled {
   background: rgba(11, 15, 25, 0.9); border: 1px solid rgba(0, 240, 255, 0.4); color: #fff;
   padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; outline: none; transition: all 0.2s;
@@ -309,4 +309,88 @@ canvas { width: 100%; height: 100%; display: block; background: #07090e; cursor:
 }
 .restart-btn.secondary-btn:hover {
   border-color: var(--primary); background: rgba(0, 240, 255, 0.2); box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+}
+
+/* 🧪 沙盒開發者二階選單面板 (寬度 230px 完美約束) */
+#sandbox-dev-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  padding: 10px 12px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+  box-shadow: 0 0 20px rgba(255, 183, 0, 0.15);
+  box-sizing: border-box;
+}
+
+.dev-panel-title {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--warning);
+  border-bottom: 1px solid rgba(255, 183, 0, 0.25);
+  padding-bottom: 4px;
+}
+
+.dev-tier1-tabs {
+  display: flex;
+  gap: 3px;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 3px;
+  border-radius: 6px;
+}
+
+.dev-tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 4px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.dev-tab-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dev-tab-btn.active {
+  background: var(--warning);
+  color: #000;
+  box-shadow: 0 0 8px rgba(255, 183, 0, 0.5);
+}
+
+.dev-tier2-container {
+  min-height: 56px;
+}
+
+.dev-sub-panel {
+  display: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.dev-sub-panel.active {
+  display: grid;
+}
+
+/* 🟢 綠色專屬按鈕樣式 */
+.dev-btn-green {
+  border-color: var(--success) !important;
+  background: rgba(0, 255, 102, 0.18) !important;
+  color: #fff !important;
+}
+
+.dev-btn-green:hover {
+  background: var(--success) !important;
+  color: #000 !important;
+  box-shadow: 0 0 10px var(--success) !important;
 }

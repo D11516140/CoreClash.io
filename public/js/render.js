@@ -1,4 +1,10 @@
-// 🎨 render.js - 畫面渲染與繪圖核心模組
+// 🎨 public/js/render.js - 畫面渲染與繪圖核心模組
+
+// 🟢 補上全域特效陣列宣告 (解決 particles is not defined 報錯)
+let particles = [];
+let floatingTexts = [];
+window.particles = particles;
+window.floatingTexts = floatingTexts;
 
 const auraCanvas = document.createElement('canvas');
 const auraCtx = auraCanvas.getContext('2d');
@@ -26,7 +32,7 @@ function getHpBarAlpha(entity, currentTick) {
   return 0.0;
 }
 
-// 🟢 單位受擊紅光閃爍 (Hit Flash: 10 幀內 55% 透明度紅外發光)[cite: 4]
+// 🟢 單位受擊紅光閃爍 (Hit Flash: 10 幀內 55% 透明度紅外發光)
 function drawHitFlash(pos, radius, currentTick, lastHitTick) {
   if (!lastHitTick) return;
   const diff = currentTick - lastHitTick;
@@ -43,17 +49,19 @@ function drawHitFlash(pos, radius, currentTick, lastHitTick) {
   }
 }
 
-function createExplosion(x, y, color, count = 12) {
+function createExplosion(x, y, color = '#ff0055', count = 12) {
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = Math.random() * 4 + 1;
     particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1.0, decay: Math.random() * 0.05 + 0.02, color, size: Math.random() * 4 + 2 });
   }
 }
+window.createExplosion = createExplosion;
 
-function addFloatingText(x, y, text, color) {
+function addFloatingText(x, y, text, color = '#ffffff') {
   floatingTexts.push({ x, y, text, color, life: 1.0, vy: -1.2 });
 }
+window.addFloatingText = addFloatingText;
 
 function drawTooltipScreen(ctx, sx, sy, title, titleColor, basicItems, advancedItems, actions = []) {
   ctx.save();
@@ -172,7 +180,10 @@ function drawGameScene(state) {
 
   const bounds = state.mapBounds || { minX: 0, maxX: 1600, minY: 0, maxY: 1200, width: 1600, height: 1200, buffer: 600 };
   const currentTick = state.tickCount || 0;
-  const me = state.players[myPlayerId];
+  
+  // 🟢 全域玩家解析 (自動相容 PVP 與沙盒模式)
+  const me = typeof getCurrentPlayer === 'function' ? getCurrentPlayer(state) : (state.players[window.myPlayerId] || Object.values(state.players)[0]);
+  const myId = me ? me.id : (typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId);
 
   if (auraCanvas.width !== canvas.width || auraCanvas.height !== canvas.height) {
     auraCanvas.width = canvas.width;
@@ -248,7 +259,7 @@ function drawGameScene(state) {
   const enemyGroundUnits = [];
 
   Object.values(state.players).forEach(p => {
-    const isSelf = p.id === myPlayerId || (me && me.allianceId && p.allianceId === me.allianceId);
+    const isSelf = p.id === myId || (me && me.allianceId && p.allianceId === me.allianceId);
     if (p.core && p.core.hp > 0) {
       (isSelf ? selfGroundUnits : enemyGroundUnits).push({ x: p.core.x, y: p.core.y, r: 85 });
     }
@@ -261,7 +272,7 @@ function drawGameScene(state) {
   });
 
   state.towers.forEach(t => {
-    const isSelf = t.ownerId === myPlayerId || (me && me.allianceId && state.players[t.ownerId] && state.players[t.ownerId].allianceId === me.allianceId);
+    const isSelf = t.ownerId === myId || (me && me.allianceId && state.players[t.ownerId] && state.players[t.ownerId].allianceId === me.allianceId);
     (isSelf ? selfGroundUnits : enemyGroundUnits).push({ x: t.x, y: t.y, r: 60 });
   });
 
@@ -393,9 +404,9 @@ function drawGameScene(state) {
     ctx.beginPath(); ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0;
 
-    const isAlly = me && me.allianceId && p.allianceId === me.allianceId && p.id !== myPlayerId;
+    const isAlly = me && me.allianceId && p.allianceId === me.allianceId && p.id !== myId;
     ctx.font = 'bold 11px Segoe UI, sans-serif';
-    ctx.fillStyle = (p.id === myPlayerId) ? '#00f0ff' : (isAlly ? '#3b82f6' : '#e2e8f0');
+    ctx.fillStyle = (p.id === myId) ? '#00f0ff' : (isAlly ? '#3b82f6' : '#e2e8f0');
     ctx.textAlign = 'center';
     ctx.fillText(`${p.name || p.id.substring(0, 6)}${isAlly ? ' [隊友]' : ''}`, pos.x, pos.y - 20);
     ctx.textAlign = 'left';
@@ -411,7 +422,6 @@ function drawGameScene(state) {
     }
   });
 
-  // 🟢 10. 放置預覽與精準 placement 失敗提示[cite: 4]
   if (me && !me.isDead) {
     const gridX = Math.floor(mousePos.x / 40) * 40 + 20;
     const gridY = Math.floor(mousePos.y / 40) * 40 + 20;
@@ -441,7 +451,7 @@ function drawGameScene(state) {
       ctx.beginPath(); ctx.arc(coreScreen.x, coreScreen.y, 350, 0, Math.PI * 2); ctx.stroke();
 
       state.towers.forEach(t => {
-        if (t.ownerId === myPlayerId) {
+        if (t.ownerId === myId) {
           const tScreen = worldToScreen(t.x, t.y);
           const circleColor = t.type === 'ADVANCED' ? 'rgba(192, 38, 211, 0.25)' : 'rgba(37, 99, 235, 0.25)';
           ctx.strokeStyle = circleColor;
@@ -487,7 +497,6 @@ function drawGameScene(state) {
     }
   }
 
-  // 11. Tooltip 資訊浮窗
   if (buildMode === null) {
     let activeEntity = pinnedTooltip ? findEntityById(pinnedTooltip.id, pinnedTooltip.type) : findEntityAtPos(mousePos.x, mousePos.y);
 
@@ -498,7 +507,7 @@ function drawGameScene(state) {
       if (activeEntity.type === 'COMMANDER') {
         const targetP = state.players[activeEntity.id];
         if (targetP) {
-          const isSelf = targetP.id === myPlayerId;
+          const isSelf = targetP.id === myId;
           const meAlliance = me ? state.alliances[me.allianceId] : null;
           const meIsLeader = meAlliance && (meAlliance.leaderId === me.id);
 
@@ -570,7 +579,7 @@ function drawGameScene(state) {
         const t = state.towers.find(item => item.id === activeEntity.id);
         if (t) {
           const isAdv = t.type === 'ADVANCED';
-          const isSelf = t.ownerId === myPlayerId;
+          const isSelf = t.ownerId === myId;
           const isAlly = me && me.allianceId && state.players[t.ownerId] && state.players[t.ownerId].allianceId === me.allianceId;
 
           const maxRefund = isAdv ? 140 : 70;
@@ -631,7 +640,7 @@ function drawGameScene(state) {
 
         if (foundSoldier) {
           const isHeavy = foundSoldier.type === 'HEAVY';
-          const isSelf = ownerP && ownerP.id === myPlayerId;
+          const isSelf = ownerP && ownerP.id === myId;
           const isNeutral = !ownerP;
 
           const maxRefund = isHeavy ? 84 : 35;
@@ -689,7 +698,7 @@ function drawGameScene(state) {
       else if (activeEntity.type === 'CORE') {
         const p = Object.values(state.players).find(item => item.core && item.core.id === activeEntity.id);
         if (p && p.core) {
-          const isSelf = p.id === myPlayerId;
+          const isSelf = p.id === myId;
           tooltipData = {
             title: `基地核心 (${isSelf ? '己方' : '敵方'})`,
             titleColor: '#00f0ff',

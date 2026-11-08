@@ -1,8 +1,9 @@
-// 🟢 全域選單狀態初始化保險
+// 🖥️ public/js/ui.js - HUD 介面、全域玩家解析與聯盟系統全功能模組
+
 window.activeMenu = window.activeMenu || null;
 window.buildMode = window.buildMode || null;
 
-// 💬 賽博風動態 Toast 提示彈窗
+// 💬 賽博風動態 Toast 提示
 let toastTimer = null;
 function showCyberToast(msg) {
   const toast = document.getElementById('cyber-toast');
@@ -16,43 +17,60 @@ function showCyberToast(msg) {
 }
 window.showCyberToast = showCyberToast;
 
-// 🟢 安全取得全域 Socket 實例
 function getSocket() {
   return (typeof socket !== 'undefined' && socket) ? socket : window.socket;
 }
 
-// 🟢 玩家 ID 初始化保險
-let myPlayerId = localStorage.getItem('corewar_player_id');
-if (!myPlayerId) {
-  myPlayerId = 'player_' + Math.random().toString(36).substring(2, 9);
-  localStorage.setItem('corewar_player_id', myPlayerId);
+// 🟢 玩家 ID 取得保險
+function getPlayerId() {
+  if (!window.myPlayerId) {
+    window.myPlayerId = localStorage.getItem('corewar_player_id');
+    if (!window.myPlayerId) {
+      window.myPlayerId = 'player_' + Math.random().toString(36).substring(2, 9);
+      localStorage.setItem('corewar_player_id', window.myPlayerId);
+    }
+  }
+  return window.myPlayerId;
 }
-window.myPlayerId = myPlayerId;
+window.getPlayerId = getPlayerId;
+
+// 🟢 全域玩家解析器 (自動兼顧 PVP Socket ID 與沙盒離線 ID)
+function getCurrentPlayer(state) {
+  if (!state || !state.players) return null;
+  if (window.isSandboxActive) {
+    const pid = getPlayerId();
+    return state.players[pid] || Object.values(state.players).find(p => p.id !== 'enemy_ai') || null;
+  }
+  const s = getSocket();
+  if (s && s.id && state.players[s.id]) {
+    return state.players[s.id];
+  }
+  const pid = getPlayerId();
+  return state.players[pid] || Object.values(state.players).find(p => p.persistentId === pid || p.id === pid) || Object.values(state.players)[0] || null;
+}
+window.getCurrentPlayer = getCurrentPlayer;
 
 // ⚔️ 進入 PVP 戰局邏輯
 function joinBattleFromLobby() {
   const nickInput = document.getElementById('nickname-input');
   let name = nickInput ? nickInput.value.trim() : '';
-  if (!name) name = `指揮官_${myPlayerId.substring(0, 4)}`;
+  if (!name) name = `指揮官_${getPlayerId().substring(0, 4)}`;
 
   localStorage.setItem('corewar_player_name', name);
   
   const lobbyModal = document.getElementById('lobby-modal');
   if (lobbyModal) lobbyModal.style.display = 'none';
 
-  const playerColor = (typeof selectedPlayerColor !== 'undefined' && selectedPlayerColor) ? selectedPlayerColor : '#ffb700';
+  const playerColor = localStorage.getItem('corewar_player_color') || '#ffb700';
   const s = getSocket();
   if (s && s.emit) {
-    s.emit('joinGame', { persistentId: myPlayerId, nickname: name, color: playerColor });
+    s.emit('joinGame', { persistentId: getPlayerId(), nickname: name, color: playerColor });
   }
 }
 window.joinBattleFromLobby = joinBattleFromLobby;
 
-// 🎨 代表色選擇器 (預設黃色 #ffb700)
-let selectedPlayerColor = localStorage.getItem('corewar_player_color') || '#ffb700';
-
+// 🎨 代表色選擇器
 function selectPlayerColor(color, el) {
-  selectedPlayerColor = color;
   localStorage.setItem('corewar_player_color', color);
   document.querySelectorAll('.color-dot').forEach(dot => dot.classList.remove('active'));
   if (el) el.classList.add('active');
@@ -60,10 +78,8 @@ function selectPlayerColor(color, el) {
 }
 window.selectPlayerColor = selectPlayerColor;
 
-// 初始化代表色與暱稱 UI 狀態
 window.addEventListener('DOMContentLoaded', () => {
   const savedColor = localStorage.getItem('corewar_player_color') || '#ffb700';
-  selectedPlayerColor = savedColor;
   document.querySelectorAll('.color-dot').forEach(dot => {
     if (dot.getAttribute('data-color') === savedColor) {
       dot.classList.add('active');
@@ -79,11 +95,10 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// 🚪 離開遊戲動作
 function confirmLeaveGame() {
   showCustomConfirm(
     '🚪 離開遊戲確認',
-    '確定要離開戰術指揮終端嗎？（地圖上的基地與建築將保持駐守狀態）',
+    '確定要離開戰術指揮終端嗎？',
     () => {
       showCyberToast('正在關閉指揮連線...');
       setTimeout(() => {
@@ -95,7 +110,6 @@ function confirmLeaveGame() {
 }
 window.confirmLeaveGame = confirmLeaveGame;
 
-// 💬 賽博風格自訂確認框 Modal
 function showCustomConfirm(title, msg, onYes, showCancel = true) {
   const modal = document.getElementById('custom-confirm-modal');
   const titleEl = document.getElementById('confirm-title');
@@ -141,74 +155,63 @@ function switchLbTab(tab) {
 window.switchLbTab = switchLbTab;
 
 function createAllianceFromUI() {
+  if (window.isSandboxActive) return;
   const input = document.getElementById('alliance-name-input');
-  const name = input ? input.value : '';
+  const name = input ? input.value.trim() : '';
   const s = getSocket();
-  if (name.trim() && s) {
-    s.emit('createAlliance', name.trim());
+  if (name && s) {
+    s.emit('createAlliance', name);
     input.value = '';
   }
 }
 window.createAllianceFromUI = createAllianceFromUI;
 
 function leaveAllianceFromUI() {
-  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  if (window.isSandboxActive) return;
+  const me = getCurrentPlayer(window.lastGameState);
   if (!me || !me.allianceId) return;
 
   const ally = window.lastGameState.alliances[me.allianceId];
   const s = getSocket();
   if (ally && ally.leaderId === me.id) {
     if (ally.memberIds.length > 1) {
-      showCustomConfirm(
-        '⚠️ 身為盟主無法退出',
-        '聯盟尚有其他成員！請先點擊「👥 查看全體成員」將盟主職位轉讓給隊友後再退出。',
-        null,
-        false
-      );
+      showCustomConfirm('⚠️ 身為盟主無法退出', '請先將盟主職位轉讓給隊友後再退出。', null, false);
       return;
     } else {
-      showCustomConfirm(
-        '⚠️ 解散聯盟確認',
-        '聯盟目前僅剩你一人，退出將直接【解散聯盟】，是否確定？',
-        () => { if (s) s.emit('leaveAlliance'); }
-      );
+      showCustomConfirm('⚠️ 解散聯盟確認', '聯盟目前僅剩你一人，退出將直接解散聯盟，是否確定？', () => {
+        if (s) s.emit('leaveAlliance');
+      });
       return;
     }
   }
 
-  showCustomConfirm(
-    '🛡️ 退出聯盟確認',
-    '確定要退出當前聯盟嗎？',
-    () => { if (s) s.emit('leaveAlliance'); }
-  );
+  showCustomConfirm('🛡️ 退出聯盟確認', '確定要退出當前聯盟嗎？', () => {
+    if (s) s.emit('leaveAlliance');
+  });
 }
 window.leaveAllianceFromUI = leaveAllianceFromUI;
 
 function respondInviteFromUI(accept) {
-  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  if (window.isSandboxActive) return;
+  const me = getCurrentPlayer(window.lastGameState);
   const s = getSocket();
   if (!me || !s) return;
 
-  if (me.pendingInvite) {
-    s.emit('respondAllianceInvite', accept);
-  } else if (me.pendingPoach) {
-    s.emit('respondPoachInvite', accept);
-  }
+  if (me.pendingInvite) s.emit('respondAllianceInvite', accept);
+  else if (me.pendingPoach) s.emit('respondPoachInvite', accept);
 }
 window.respondInviteFromUI = respondInviteFromUI;
 
 function respondAllianceApp(accept) {
-  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  if (window.isSandboxActive) return;
+  const me = getCurrentPlayer(window.lastGameState);
   const s = getSocket();
   if (!me || !me.allianceId || !s) return;
 
   const ally = window.lastGameState.alliances[me.allianceId];
   if (ally && ally.pendingRequests && ally.pendingRequests.length > 0) {
     const oldestReq = ally.pendingRequests[0];
-    s.emit('respondAllianceApplication', {
-      applicantId: oldestReq.applicantId,
-      accept: accept
-    });
+    s.emit('respondAllianceApplication', { applicantId: oldestReq.applicantId, accept: accept });
   }
 }
 window.respondAllianceApp = respondAllianceApp;
@@ -221,7 +224,8 @@ function inspectPlayer(targetId) {
 window.inspectPlayer = inspectPlayer;
 
 function openSettingsModal() {
-  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  if (window.isSandboxActive) return;
+  const me = getCurrentPlayer(window.lastGameState);
   if (!me || !me.allianceId || !window.lastGameState.alliances[me.allianceId]) return;
 
   const ally = window.lastGameState.alliances[me.allianceId];
@@ -270,7 +274,8 @@ function kickMemberUI(targetId, targetName) {
 window.kickMemberUI = kickMemberUI;
 
 function openMembersModal() {
-  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  if (window.isSandboxActive) return;
+  const me = getCurrentPlayer(window.lastGameState);
   if (!me || !me.allianceId || !window.lastGameState.alliances[me.allianceId]) return;
 
   const ally = window.lastGameState.alliances[me.allianceId];
@@ -287,7 +292,7 @@ function openMembersModal() {
 
     listEl.innerHTML = members.map(m => {
       const isLeader = (m.id === ally.leaderId);
-      const isMe = (m.id === myPlayerId);
+      const isMe = (m.id === me.id);
 
       let actionButtons = '';
       if (isMeLeader && !isMe) {
@@ -308,9 +313,7 @@ function openMembersModal() {
             <span style="font-weight: bold; color: ${nameColor};">
               ${isLeader ? '👑 ' : '🛡️ '}${m.name || m.id.substring(0, 4)}
             </span>
-            <span style="font-size: 11px; color: #9ca3af; margin-left: 6px;">
-              ${statusText}
-            </span>
+            <span style="font-size: 11px; color: #9ca3af; margin-left: 6px;">${statusText}</span>
           </div>
           <div style="display: flex; align-items: center; gap: 12px;">
             <span style="color: var(--primary); font-weight: bold;">${m.score || 0} Pts</span>
@@ -332,7 +335,6 @@ function closeMembersModal() {
 }
 window.closeMembersModal = closeMembersModal;
 
-// 🟢 DOM 節點快取存取器
 const uiElements = {
   btnBack: null, btnCore: null, btn1: null, btn2: null, btnF: null,
   lblE: null, lbl1: null, lbl2: null,
@@ -358,7 +360,6 @@ function initUIElementsCache() {
   uiElements.uiMoveSpeed = document.getElementById('ui-move-speed');
   uiElements.uiArmyMode = document.getElementById('ui-army-mode');
 }
-
 window.addEventListener('DOMContentLoaded', initUIElementsCache);
 
 let lastUIStateCache = '';
@@ -366,7 +367,7 @@ let lastLbHTMLCache = '';
 let lastHudDataCache = '';
 
 function updateUI() {
-  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  const me = getCurrentPlayer(window.lastGameState);
   if (!me) return;
   if (!uiElements.btnCore) initUIElementsCache();
 
@@ -384,7 +385,6 @@ function updateUI() {
     }
   });
 
-  // 情況 A: 玩家陣亡且有核心
   if (me.isDead && me.core) {
     if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
     if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
@@ -394,7 +394,6 @@ function updateUI() {
     return;
   }
 
-  // 情況 B: 未放置核心 (建基地模式)
   if (!me.core) {
     if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
     if (uiElements.btnCore) uiElements.btnCore.style.display = 'flex';
@@ -402,11 +401,10 @@ function updateUI() {
     if (uiElements.btn2) uiElements.btn2.style.display = 'none';
     if (uiElements.btnF) uiElements.btnF.style.display = 'none';
     if (uiElements.lblE) uiElements.lblE.innerText = '建基地';
-    uiElements.btnCore.classList.toggle('sub-active', buildMode === 'CORE');
+    if (uiElements.btnCore) uiElements.btnCore.classList.toggle('sub-active', buildMode === 'CORE');
     return;
   }
 
-  // 情況 C: 防禦塔選單 / 建造防禦塔預覽中
   if (activeMenu === 'TOWER_MENU' || buildMode === 'TOWER_BASIC' || buildMode === 'TOWER_ADVANCED') {
     if (uiElements.btnBack) uiElements.btnBack.style.display = 'flex';
     if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
@@ -417,12 +415,11 @@ function updateUI() {
     if (uiElements.lbl1) uiElements.lbl1.innerText = buildMode === 'TOWER_BASIC' ? '初階塔(100G) [預覽]' : '初階塔(100G)';
     if (uiElements.lbl2) uiElements.lbl2.innerText = buildMode === 'TOWER_ADVANCED' ? '中級重砲(200G) [預覽]' : '中級重砲(200G)';
 
-    uiElements.btn1.classList.toggle('sub-active', buildMode === 'TOWER_BASIC');
-    uiElements.btn2.classList.toggle('sub-active', buildMode === 'TOWER_ADVANCED');
+    if (uiElements.btn1) uiElements.btn1.classList.toggle('sub-active', buildMode === 'TOWER_BASIC');
+    if (uiElements.btn2) uiElements.btn2.classList.toggle('sub-active', buildMode === 'TOWER_ADVANCED');
     return;
   }
 
-  // 情況 D: 軍隊徵召選單
   if (activeMenu === 'ARMY_MENU') {
     if (uiElements.btnBack) uiElements.btnBack.style.display = 'flex';
     if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
@@ -435,7 +432,6 @@ function updateUI() {
     return;
   }
 
-  // 情況 E: 預設主介面 (已有核心)
   if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
   if (uiElements.btnCore) uiElements.btnCore.style.display = 'flex';
   if (uiElements.btn1) uiElements.btn1.style.display = 'flex';
@@ -449,82 +445,59 @@ function updateUI() {
 window.updateUI = updateUI;
 
 function updateHUD(state) {
-  const me = state.players[myPlayerId];
+  if (!state) return;
+  const me = getCurrentPlayer(state);
   if (!uiElements.uiGold) initUIElementsCache();
-  const playersArr = Object.values(state.players);
 
-  // 1. 排行榜 HTML Diffing
   if (uiElements.lbList) {
     let newLbHTML = '';
 
     if (currentLeaderboardTab === 'PLAYER') {
-      const sorted = [...playersArr].sort((a, b) => (b.score || 0) - (a.score || 0));
-      const myRankIdx = sorted.findIndex(p => p.id === myPlayerId);
+      const playersArr = Object.values(state.players || {}).filter(p => p.id !== 'enemy_ai');
+      playersArr.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-      let displayList = [];
-      if (myRankIdx >= 4) {
-        displayList = sorted.slice(0, 4);
-        displayList.push({ ...sorted[myRankIdx], actualRank: myRankIdx + 1 });
-      } else {
-        displayList = sorted.slice(0, 5).map((p, i) => ({ ...p, actualRank: i + 1 }));
+      if (uiElements.onlineCount) {
+        uiElements.onlineCount.innerText = window.isSandboxActive ? '🧪 沙盒模式' : `${playersArr.length} 在線`;
       }
 
-      newLbHTML = displayList.map((p) => {
-        const isMe = (p.id === myPlayerId);
-        const ally = p.allianceId ? state.alliances[p.allianceId] : null;
-        const allyTag = ally ? `<span style="color: ${ally.color}; font-size: 10px; margin-left: 4px;">[${ally.name}]</span>` : '';
-        const offlineTag = !p.isOnline ? `<span style="color: #9ca3af; font-size: 10px; margin-left: 4px;">(離線)</span>` : '';
-
+      newLbHTML = playersArr.map((p, idx) => {
+        const isMe = me && (p.id === me.id);
+        const displayName = p.name || '無名指揮官';
         return `
-          <div class="lb-row ${isMe ? 'me' : ''} ${!p.isOnline ? 'offline' : ''}">
-            <span class="lb-name" onclick="inspectPlayer('${p.id}')">${p.actualRank}. ${p.name || p.id.substring(0, 4)}${allyTag}${offlineTag}</span>
-            <span style="font-weight: bold; color: ${!p.isOnline ? '#9ca3af' : 'var(--primary)'};">${p.score || 0} Pts</span>
+          <div class="lb-row ${isMe ? 'me' : ''}">
+            <span class="lb-name" onclick="inspectPlayer('${p.id}')">${idx + 1}. ${displayName}</span>
+            <span style="font-weight: bold;">${p.score || 0} Pts</span>
           </div>
         `;
       }).join('');
     } else {
-      const sortedAllies = Object.values(state.alliances).sort((a, b) => (b.score || 0) - (a.score || 0));
-      const myAllyId = me ? me.allianceId : null;
-      const myAllyRankIdx = myAllyId ? sortedAllies.findIndex(a => a.id === myAllyId) : -1;
-
-      let displayList = [];
-      if (myAllyRankIdx >= 4) {
-        displayList = sortedAllies.slice(0, 4);
-        displayList.push({ ...sortedAllies[myAllyRankIdx], actualRank: myAllyRankIdx + 1 });
+      if (window.isSandboxActive) {
+        newLbHTML = `<div style="font-size: 11px; color: #9ca3af; text-align: center; padding: 12px 0;">🧪 沙盒單人模式下無聯盟功能</div>`;
       } else {
-        displayList = sortedAllies.slice(0, 5).map((a, i) => ({ ...a, actualRank: i + 1 }));
-      }
+        const alliancesArr = Object.values(state.alliances || {});
+        alliancesArr.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-      if (displayList.length === 0) {
-        newLbHTML = `<div style="font-size: 11px; color: #9ca3af; text-align: center; padding: 12px 0;">尚無成立聯盟</div>`;
-      } else {
-        newLbHTML = displayList.map((a) => {
-          const isMyAlly = (myAllyId && a.id === myAllyId);
-          const hasOnlineMembers = a.memberIds.some(memId => state.players[memId] && state.players[memId].isOnline);
-          const offlineTag = !hasOnlineMembers ? `<span style="color: #9ca3af; font-size: 10px; margin-left: 4px;">(全員離線)</span>` : '';
-
-          return `
-            <div class="lb-row ${isMyAlly ? 'me' : ''} ${!hasOnlineMembers ? 'offline' : ''}">
-              <span style="color: ${!hasOnlineMembers ? '#9ca3af' : a.color}; font-weight: bold;">
-                ${a.actualRank}. [${a.name}] <span style="font-size: 10px; color: #9ca3af;">(${a.memberIds.length}人)</span>${offlineTag}
-              </span>
-              <span style="font-weight: bold; color: ${!hasOnlineMembers ? '#9ca3af' : 'var(--warning)'};">${a.score || 0} Pts</span>
+        if (alliancesArr.length === 0) {
+          newLbHTML = `<div style="font-size: 11px; color: #9ca3af; text-align: center; padding: 8px 0;">尚無聯盟</div>`;
+        } else {
+          newLbHTML = alliancesArr.map((ally, idx) => `
+            <div class="lb-row">
+              <span class="lb-name" style="color: ${ally.color || 'var(--primary)'};">🛡️ ${ally.name}</span>
+              <span style="font-weight: bold;">${ally.score || 0} Pts</span>
             </div>
-          `;
-        }).join('');
+          `).join('');
+        }
       }
     }
 
     if (newLbHTML !== lastLbHTMLCache) {
       lastLbHTMLCache = newLbHTML;
       uiElements.lbList.innerHTML = newLbHTML;
-      if (uiElements.onlineCount) uiElements.onlineCount.innerText = `${playersArr.filter(p => p.isOnline).length} 在線`;
     }
   }
 
-  // 2. HUD 數據與 4 段移速變色
   if (me) {
-    const totalWeight = me.army.reduce((acc, s) => acc + (s.type === 'HEAVY' ? 2 : 1), 0);
+    const totalWeight = (me.army || []).reduce((acc, s) => acc + (s.type === 'HEAVY' ? 2 : 1), 0);
     const coreHp = me.core ? Math.ceil(me.core.hp) : -1;
     const speedRatio = me.speedRatio !== undefined ? me.speedRatio : 1.0;
 
@@ -533,11 +506,11 @@ function updateHUD(state) {
     if (currentDataKey !== lastHudDataCache) {
       lastHudDataCache = currentDataKey;
 
-      if (uiElements.uiGold) uiElements.uiGold.innerText = me.gold;
+      if (uiElements.uiGold) uiElements.uiGold.innerText = me.gold || 0;
 
-      if (me.core) {
-        if (uiElements.uiCoreHpText) uiElements.uiCoreHpText.innerText = `${coreHp} / 1000`;
-        if (uiElements.uiCoreHpBar) uiElements.uiCoreHpBar.style.width = `${(coreHp / 1000) * 100}%`;
+      if (me.core && me.core.hp > 0) {
+        if (uiElements.uiCoreHpText) uiElements.uiCoreHpText.innerText = `${coreHp} / ${me.core.maxHp || 1000}`;
+        if (uiElements.uiCoreHpBar) uiElements.uiCoreHpBar.style.width = `${(coreHp / (me.core.maxHp || 1000)) * 100}%`;
       } else {
         if (uiElements.uiCoreHpText) uiElements.uiCoreHpText.innerText = '未放置 (按E)';
         if (uiElements.uiCoreHpBar) uiElements.uiCoreHpBar.style.width = '0%';
@@ -560,89 +533,80 @@ function updateHUD(state) {
         else { uiElements.uiArmyMode.innerText = '🛡️ 護衛 (GUARD)'; uiElements.uiArmyMode.style.color = '#00ff66'; }
       }
 
-      if (me.isDead && !me.core) {
+      if (me.isDead && !me.core && !window.isSandboxActive) {
         document.getElementById('game-over-modal').style.display = 'flex';
       }
     }
 
-    // 3. 🛡️ 聯盟 UI 面板動態切換 & 多成員清單渲染修復
-    const createBox = document.getElementById('alliance-create-box');
-    const infoBox = document.getElementById('alliance-info-box');
-    const inviteBox = document.getElementById('alliance-invite-box');
-
-    if (me.allianceId && state.alliances && state.alliances[me.allianceId]) {
-      const ally = state.alliances[me.allianceId];
-      if (createBox) createBox.style.display = 'none';
-      if (inviteBox) inviteBox.style.display = 'none';
-      if (infoBox) infoBox.style.display = 'flex';
-
-      const dispName = document.getElementById('alliance-display-name');
-      if (dispName) dispName.innerHTML = `🛡️ <span style="color:${ally.color || 'var(--primary)'}">${ally.name}</span>`;
-
-      const settingBtn = document.getElementById('alliance-setting-btn');
-      if (settingBtn) settingBtn.style.display = (ally.leaderId === me.id) ? 'inline-block' : 'none';
-
-      const memberCount = document.getElementById('alliance-member-count');
-      if (memberCount) memberCount.innerText = `成員 (${ally.memberIds.length}人)`;
-
-      // 🏆 聯盟前 3 名成員預覽清單
-      const topMembers = document.getElementById('alliance-top-members');
-      if (topMembers) {
-        const memberObjs = ally.memberIds
-          .map(id => state.players[id])
-          .filter(Boolean)
-          .sort((a, b) => (b.score || 0) - (a.score || 0))
-          .slice(0, 3);
-
-        topMembers.innerHTML = memberObjs.map(m => {
-          const isLeader = (m.id === ally.leaderId);
-          const isMe = (m.id === myPlayerId);
-          const nameColor = isMe ? 'var(--success)' : (isLeader ? 'var(--warning)' : '#fff');
-          const roleIcon = isLeader ? '👑 ' : '🛡️ ';
-          return `<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
-            <span style="color:${nameColor}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px;">${roleIcon}${m.name || m.id.substring(0, 4)}</span>
-            <span style="color: var(--primary); font-weight: bold; font-size: 10px;">${m.score || 0} Pts</span>
-          </div>`;
-        }).join('');
-      }
-
-      const reqContainer = document.getElementById('alliance-requests-container');
-      if (ally.leaderId === me.id && ally.pendingRequests && ally.pendingRequests.length > 0) {
-        if (reqContainer) reqContainer.style.display = 'flex';
-        const reqTitle = document.getElementById('req-count-title');
-        if (reqTitle) reqTitle.innerText = `📥 申請清單 (${ally.pendingRequests.length})`;
-        
-        const oldestReq = ally.pendingRequests[0];
-        const reqApplicant = state.players[oldestReq.applicantId];
-        const reqNameEl = document.getElementById('req-oldest-name');
-        if (reqNameEl) reqNameEl.innerText = reqApplicant ? (reqApplicant.name || oldestReq.applicantId.substring(0, 4)) : '未知';
-      } else {
-        if (reqContainer) reqContainer.style.display = 'none';
-      }
-    } else {
-      if (infoBox) infoBox.style.display = 'none';
-      if (createBox) createBox.style.display = 'block';
-
-      if (me.pendingInvite || me.pendingPoach) {
-        if (inviteBox) inviteBox.style.display = 'flex';
-        const inviteText = document.getElementById('invite-notice-text');
-        if (inviteText) {
-          if (me.pendingInvite) {
-            const inviterAlly = state.alliances[me.pendingInvite.allianceId];
-            const allyName = inviterAlly ? inviterAlly.name : '聯盟';
-            inviteText.innerText = `📩 收到 [${allyName}] 邀請`;
-          } else if (me.pendingPoach) {
-            const poacherAlly = state.alliances[me.pendingPoach.allianceId];
-            const allyName = poacherAlly ? poacherAlly.name : '聯盟';
-            inviteText.innerText = `⚡ 收到 [${allyName}] 挖腳`;
-          }
-        }
-      } else {
-        if (inviteBox) inviteBox.style.display = 'none';
-      }
-    }
+    updateAllianceUI(state);
   }
 
   updateUI();
 }
 window.updateHUD = updateHUD;
+
+function updateAllianceUI(state) {
+  if (window.isSandboxActive) return;
+
+  const me = getCurrentPlayer(state);
+  if (!me) return;
+
+  const createBox = document.getElementById('alliance-create-box');
+  const infoBox = document.getElementById('alliance-info-box');
+  const inviteBox = document.getElementById('alliance-invite-box');
+
+  if (!me.allianceId || !state.alliances || !state.alliances[me.allianceId]) {
+    if (createBox) createBox.style.display = 'block';
+    if (infoBox) infoBox.style.display = 'none';
+    if (inviteBox) inviteBox.style.display = me.pendingInvite ? 'flex' : 'none';
+    return;
+  }
+
+  const ally = state.alliances[me.allianceId];
+  if (createBox) createBox.style.display = 'none';
+  if (inviteBox) inviteBox.style.display = 'none';
+  if (infoBox) infoBox.style.display = 'flex';
+
+  const dispName = document.getElementById('alliance-display-name');
+  if (dispName) dispName.innerHTML = `🛡️ <span style="color:${ally.color || 'var(--primary)'}">${ally.name}</span>`;
+
+  const settingBtn = document.getElementById('alliance-setting-btn');
+  if (settingBtn) settingBtn.style.display = (ally.leaderId === me.id) ? 'inline-block' : 'none';
+
+  const memberCount = document.getElementById('alliance-member-count');
+  if (memberCount) memberCount.innerText = `成員 (${ally.memberIds.length}人)`;
+
+  const topMembers = document.getElementById('alliance-top-members');
+  if (topMembers) {
+    const memberObjs = ally.memberIds
+      .map(id => state.players[id])
+      .filter(Boolean)
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, 3);
+
+    topMembers.innerHTML = memberObjs.map(m => {
+      const isLeader = (m.id === ally.leaderId);
+      const isMe = (m.id === me.id);
+      const nameColor = isMe ? 'var(--success)' : (isLeader ? 'var(--warning)' : '#fff');
+      const roleIcon = isLeader ? '👑 ' : '🛡️ ';
+      return `<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
+        <span style="color:${nameColor}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px;">${roleIcon}${m.name || m.id.substring(0, 4)}</span>
+        <span style="color: var(--primary); font-weight: bold; font-size: 10px;">${m.score || 0} Pts</span>
+      </div>`;
+    }).join('');
+  }
+
+  const reqContainer = document.getElementById('alliance-requests-container');
+  if (ally.leaderId === me.id && ally.pendingRequests && ally.pendingRequests.length > 0) {
+    if (reqContainer) reqContainer.style.display = 'flex';
+    const reqTitle = document.getElementById('req-count-title');
+    if (reqTitle) reqTitle.innerText = `📥 申請清單 (${ally.pendingRequests.length})`;
+    
+    const oldestReq = ally.pendingRequests[0];
+    const reqApplicant = state.players[oldestReq.applicantId];
+    const reqNameEl = document.getElementById('req-oldest-name');
+    if (reqNameEl) reqNameEl.innerText = reqApplicant ? (reqApplicant.name || oldestReq.applicantId.substring(0, 4)) : '未知';
+  } else {
+    if (reqContainer) reqContainer.style.display = 'none';
+  }
+}

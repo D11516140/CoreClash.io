@@ -4,33 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CoreClash.io - Cyber RTS</title>
-  <link rel="stylesheet" href="css/style.css?v=13">
+  <link rel="stylesheet" href="css/style.css?v=20">
 </head>
 <body>
 
 <div id="game-wrapper">
   <canvas id="gameCanvas" width="1200" height="800"></canvas>
 
-  <!-- 賽博風動態 Toast 提示彈窗 -->
+  <!-- 💬 賽博風動態 Toast 提示彈窗 -->
   <div id="cyber-toast" class="cyber-toast"></div>
 
   <!-- 🚪 主畫面大廳 Modal -->
   <div id="lobby-modal">
-    <!-- 頂部資訊列 (反饋 & 版本號) -->
     <div class="lobby-header-bar">
       <button class="top-bar-btn" onclick="showCyberToast('💬 感謝反饋！官方頻道建置中...')">💬 反饋</button>
       <span class="version-tag">v0.4.0 Alpha</span>
     </div>
 
-    <!-- 標題 LOGO (置中) -->
     <div class="lobby-logo-box">
       <h1>🎮 CORECLASH.IO</h1>
       <p class="lobby-subtitle">即時賽博戰術競技場</p>
     </div>
 
-    <!-- 中間：大卡片式模式選擇 (PVP 置中高亮引導) -->
     <div class="mode-cards-container">
-      <!-- 卡片 1 (左): 新手教學 -->
       <div class="mode-card side-card" onclick="showCyberToast('📖 新手戰術引導模式開發中！')">
         <div class="card-icon">📖</div>
         <div class="card-title">新手教學</div>
@@ -38,7 +34,6 @@
         <div class="card-action-btn secondary">📘 進入模擬</div>
       </div>
 
-      <!-- 卡片 2 (中): PVP 戰場 (主要高亮視線焦點) -->
       <div class="mode-card primary-card" onclick="joinBattleFromLobby()">
         <div class="card-icon">⚔️</div>
         <div class="card-title">PVP 戰場</div>
@@ -46,8 +41,7 @@
         <div class="card-action-btn">🟢 進入戰局</div>
       </div>
 
-      <!-- 卡片 3 (右): 沙盒訓練場 -->
-      <div class="mode-card side-card" onclick="showCyberToast('🧪 沙盒訓練場準備中，即將開放！')">
+      <div class="mode-card side-card" onclick="startSandboxMode()">
         <div class="card-icon">🧪</div>
         <div class="card-title">沙盒訓練場</div>
         <div class="card-desc">單人自由測試與實驗</div>
@@ -55,9 +49,7 @@
       </div>
     </div>
 
-    <!-- 底部：玩家身份卡片 & 系統按鈕 -->
     <div class="lobby-footer-bar">
-      <!-- 左下：身份卡片 -->
       <div class="player-identity-card">
         <div class="identity-title">👑 指揮官個人檔案</div>
         <div class="identity-rows">
@@ -78,7 +70,6 @@
         </div>
       </div>
 
-      <!-- 右下：系統按鈕 (設定 & 離開) -->
       <div class="system-btn-group">
         <button class="sys-btn" onclick="showCyberToast('⚙️ 系統與控制設定選單開發中！')">⚙️ 設定</button>
         <button class="sys-btn leave" onclick="confirmLeaveGame()">🚪 離開</button>
@@ -86,7 +77,7 @@
     </div>
   </div>
 
-  <!-- 左側 HUD 狀態面板 -->
+  <!-- 👈 左側 HUD 面板 -->
   <div class="hud-card">
     <div class="hud-stat">
       <span>💰 金幣</span>
@@ -111,7 +102,7 @@
     </div>
   </div>
 
-  <!-- 🏆 右側 HUD 容器 (頁籤式排行榜) -->
+  <!-- 🏆 右側 HUD 容器 -->
   <div class="right-hud-panel">
     <div class="leaderboard-card">
       <div class="lb-header">
@@ -175,53 +166,56 @@
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- ⚙️ 聯盟設定 Modal -->
-  <div id="settings-modal" class="modal-overlay">
-    <div class="modal-box">
-      <div class="modal-header">
-        <span class="modal-title">⚙️ 聯盟招募設定</span>
-        <button class="icon-btn btn-reject" style="font-size: 18px;" onclick="closeSettingsModal()">✕</button>
+    <!-- 🛠️ 二階沙盒開發者面板 (已移除退出按鈕) -->
+    <div id="sandbox-dev-card" style="display: none;">
+      <div class="dev-panel-title">🛠️ 沙盒開發者面板</div>
+
+      <div class="dev-tier1-tabs">
+        <button class="dev-tab-btn active" onclick="switchDevTab('buff', this)">強化</button>
+        <button class="dev-tab-btn" onclick="switchDevTab('monster', this)">生怪</button>
+        <button class="dev-tab-btn" onclick="switchDevTab('enemy', this)">敵方</button>
+        <button class="dev-tab-btn" onclick="switchDevTab('reset', this)">重置</button>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <button id="opt-free" class="mode-opt-btn" onclick="setRecruitmentModeUI('FREE')">
-          <span>🟢 自由加入 (無需審核)</span>
-        </button>
-        <button id="opt-review" class="mode-opt-btn" onclick="setRecruitmentModeUI('REVIEW')">
-          <span>🟡 審核加入 (需要盟主按 ✔)</span>
-        </button>
-        <button id="opt-closed" class="mode-opt-btn" onclick="setRecruitmentModeUI('CLOSED')">
-          <span>🔴 封閉聯盟 (拒絕主動申請)</span>
-        </button>
+
+      <div class="dev-tier2-container">
+        <!-- 1. 強化頁面 -->
+        <div id="dev-tab-buff" class="dev-sub-panel active">
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxAddGold(10000)">💰 +10,000G</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxAddLevel(1)">⬆️ +1 等級</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px; grid-column: span 2;" onclick="sandboxMaxLevel()">👑 等級封頂</button>
+        </div>
+
+        <!-- 2. 生怪頁面 -->
+        <div id="dev-tab-monster" class="dev-sub-panel">
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxSpawnMonster(false)">👾 紫晶怪</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxSpawnMonster(true)">👹 突襲菁英怪</button>
+        </div>
+
+        <!-- 3. 敵方單位頁面 -->
+        <div id="dev-tab-enemy" class="dev-sub-panel">
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxBuildEnemyTower('BASIC')">🗼 敵基礎塔</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxBuildEnemyTower('ADVANCED')">💥 敵重砲塔</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxSpawnEnemySoldier('BASIC')">🗡️ 敵方步兵</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxSpawnEnemySoldier('HEAVY')">🛡️ 敵重裝兵</button>
+        </div>
+
+        <!-- 4. 重置頁面 (綠色專屬按鈕) -->
+        <div id="dev-tab-reset" class="dev-sub-panel">
+          <button class="alliance-btn dev-btn-green" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxHealAllUnits()">💚 恢復血量</button>
+          <button class="alliance-btn dev-btn-green" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxClearEnemies()">💚 清除敵方</button>
+          <button class="alliance-btn leave-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxClearTowers()">💥 清除防禦塔</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px; background: rgba(255,255,255,0.1);" onclick="sandboxResetExp()">✨ 重置經驗</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px; background: rgba(255,255,255,0.1); grid-column: span 2;" onclick="sandboxResetGold()">🪙 重置金幣(250)</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- 📜 全體成員滾動 Modal -->
-  <div id="members-modal" class="modal-overlay">
-    <div class="modal-box">
-      <div class="modal-header">
-        <span id="modal-alliance-title" class="modal-title">🛡️ 聯盟成員列表</span>
-        <button class="icon-btn btn-reject" style="font-size: 18px;" onclick="closeMembersModal()">✕</button>
-      </div>
-      <div id="modal-members-list" class="scroll-list"></div>
-    </div>
-  </div>
+  <div id="settings-modal" class="modal-overlay"></div>
+  <div id="members-modal" class="modal-overlay"></div>
+  <div id="custom-confirm-modal" class="modal-overlay"></div>
 
-  <!-- 💬 遊戲內自訂確認 Modal -->
-  <div id="custom-confirm-modal" class="modal-overlay">
-    <div class="modal-box" style="width: 380px; text-align: center; gap: 16px;">
-      <div id="confirm-title" style="font-size: 17px; font-weight: bold; color: var(--primary);">提示</div>
-      <div id="confirm-msg" style="font-size: 14px; color: var(--text); line-height: 1.6; word-break: break-all;">確定要執行此操作嗎？</div>
-      <div id="confirm-btn-group" style="display: flex; justify-content: center; gap: 12px; margin-top: 8px;">
-        <button id="confirm-btn-yes" class="alliance-btn leave-btn" style="padding: 8px 22px; font-size: 13px;">確定</button>
-        <button id="confirm-btn-no" class="alliance-btn" style="padding: 8px 22px; font-size: 13px; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3);" onclick="closeCustomConfirm()">取消</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 底部控制列 (預設隱藏除建基地以外的按鈕) -->
   <div id="controls-bar">
     <button id="btn-back" class="key-btn back-btn" onclick="exitSubMenu()" style="display: none;">
       <span class="key-badge">~</span> <span>返回 / 退出</span>
@@ -240,7 +234,6 @@
     </button>
   </div>
 
-  <!-- ☠️ 死亡 / 遊戲結束 Modal -->
   <div id="game-over-modal">
     <h1>CORE DESTROYED</h1>
     <p style="color: #9ca3af;">你的基地已被摧毀，試著重新佈局戰術吧！</p>
@@ -261,10 +254,19 @@
   window.addEventListener('resize', autoScaleGame);
   window.addEventListener('DOMContentLoaded', autoScaleGame);
   autoScaleGame();
+
+  function switchDevTab(tabId, btnEl) {
+    document.querySelectorAll('.dev-tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.dev-sub-panel').forEach(p => p.classList.remove('active'));
+    btnEl.classList.add('active');
+    const panel = document.getElementById('dev-tab-' + tabId);
+    if (panel) panel.classList.add('active');
+  }
 </script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/ui.js?v=13"></script>
-<script src="js/render.js?v=13"></script>
-<script src="game.js?v=13"></script>
+<script src="js/sandboxManager.js?v=20"></script>
+<script src="js/ui.js?v=20"></script>
+<script src="js/render.js?v=20"></script>
+<script src="game.js?v=20"></script>
 </body>
 </html>
