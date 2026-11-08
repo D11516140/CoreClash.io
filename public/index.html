@@ -4,33 +4,85 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CoreClash.io - Cyber RTS</title>
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <link rel="stylesheet" href="css/style.css?v=13">
 </head>
 <body>
 
 <div id="game-wrapper">
   <canvas id="gameCanvas" width="1200" height="800"></canvas>
 
-  <!-- 🚪 大廳選擇 Modal -->
+  <!-- 賽博風動態 Toast 提示彈窗 -->
+  <div id="cyber-toast" class="cyber-toast"></div>
+
+  <!-- 🚪 主畫面大廳 Modal -->
   <div id="lobby-modal">
-    <h1>CoreClash.io</h1>
-    <p class="lobby-subtitle">即時賽博戰術競技場</p>
-    
-    <div class="lobby-box">
-      <div class="input-group">
-        <label for="nickname-input">指揮官代號 (NICKNAME)</label>
-        <input type="text" id="nickname-input" class="name-input" placeholder="輸入你的指揮官名稱..." maxlength="12">
+    <!-- 頂部資訊列 (反饋 & 版本號) -->
+    <div class="lobby-header-bar">
+      <button class="top-bar-btn" onclick="showCyberToast('💬 感謝反饋！官方頻道建置中...')">💬 反饋</button>
+      <span class="version-tag">v0.4.0 Alpha</span>
+    </div>
+
+    <!-- 標題 LOGO (置中) -->
+    <div class="lobby-logo-box">
+      <h1>🎮 CORECLASH.IO</h1>
+      <p class="lobby-subtitle">即時賽博戰術競技場</p>
+    </div>
+
+    <!-- 中間：大卡片式模式選擇 (PVP 置中高亮引導) -->
+    <div class="mode-cards-container">
+      <!-- 卡片 1 (左): 新手教學 -->
+      <div class="mode-card side-card" onclick="showCyberToast('📖 新手戰術引導模式開發中！')">
+        <div class="card-icon">📖</div>
+        <div class="card-title">新手教學</div>
+        <div class="card-desc">基礎作戰與建構指南</div>
+        <div class="card-action-btn secondary">📘 進入模擬</div>
       </div>
 
-      <div class="controls-guide">
-        <div class="guide-row"><span>WASD</span><span class="guide-key">指揮官移動</span></div>
-        <div class="guide-row"><span>E 鍵</span><span class="guide-key">建基地 / 傳送回基地</span></div>
-        <div class="guide-row"><span>1 / 2 鍵</span><span class="guide-key">防禦塔 / 軍隊選單</span></div>
-        <div class="guide-row"><span>F 鍵</span><span class="guide-key">切換部隊戰術 (護衛/駐守/自由)</span></div>
-        <div class="guide-row"><span>Tab 鍵</span><span class="guide-key">切換詳細面板說明</span></div>
+      <!-- 卡片 2 (中): PVP 戰場 (主要高亮視線焦點) -->
+      <div class="mode-card primary-card" onclick="joinBattleFromLobby()">
+        <div class="card-icon">⚔️</div>
+        <div class="card-title">PVP 戰場</div>
+        <div class="card-desc">多人即時連線對決</div>
+        <div class="card-action-btn">🟢 進入戰局</div>
       </div>
 
-      <button id="start-game-btn" class="play-btn" onclick="joinBattleFromLobby()">⚔️ 加入戰局 (ENTER BATTLE)</button>
+      <!-- 卡片 3 (右): 沙盒訓練場 -->
+      <div class="mode-card side-card" onclick="showCyberToast('🧪 沙盒訓練場準備中，即將開放！')">
+        <div class="card-icon">🧪</div>
+        <div class="card-title">沙盒訓練場</div>
+        <div class="card-desc">單人自由測試與實驗</div>
+        <div class="card-action-btn secondary">⚡ 開啟訓練</div>
+      </div>
+    </div>
+
+    <!-- 底部：玩家身份卡片 & 系統按鈕 -->
+    <div class="lobby-footer-bar">
+      <!-- 左下：身份卡片 -->
+      <div class="player-identity-card">
+        <div class="identity-title">👑 指揮官個人檔案</div>
+        <div class="identity-rows">
+          <div class="id-row">
+            <span class="id-label">代表色：</span>
+            <div class="color-picker-group">
+              <div class="color-dot active" data-color="#ffb700" style="background: #ffb700;" onclick="selectPlayerColor('#ffb700', this)"></div>
+              <div class="color-dot" data-color="#00f0ff" style="background: #00f0ff;" onclick="selectPlayerColor('#00f0ff', this)"></div>
+              <div class="color-dot" data-color="#00ff66" style="background: #00ff66;" onclick="selectPlayerColor('#00ff66', this)"></div>
+              <div class="color-dot" data-color="#ec4899" style="background: #ec4899;" onclick="selectPlayerColor('#ec4899', this)"></div>
+              <div class="color-dot" data-color="#ff0055" style="background: #ff0055;" onclick="selectPlayerColor('#ff0055', this)"></div>
+            </div>
+          </div>
+          <div class="id-row">
+            <span class="id-label">暱稱：</span>
+            <input type="text" id="nickname-input" class="name-input-styled" placeholder="輸入指揮官代號..." maxlength="12">
+          </div>
+        </div>
+      </div>
+
+      <!-- 右下：系統按鈕 (設定 & 離開) -->
+      <div class="system-btn-group">
+        <button class="sys-btn" onclick="showCyberToast('⚙️ 系統與控制設定選單開發中！')">⚙️ 設定</button>
+        <button class="sys-btn leave" onclick="confirmLeaveGame()">🚪 離開</button>
+      </div>
     </div>
   </div>
 
@@ -86,7 +138,7 @@
         <div class="notice-row">
           <span id="invite-notice-text" style="color: var(--warning); font-weight: bold;">收到邀請</span>
           <div style="display: flex; gap: 4px;">
-            <button class="icon-btn btn-approve" title="同意加入" onclick="respondInviteFromUI(true)">✔</button>
+            <button class="icon-btn btn-approve" title="同意邀請" onclick="respondInviteFromUI(true)">✔</button>
             <button class="icon-btn btn-reject" title="拒絕邀請" onclick="respondInviteFromUI(false)">✖</button>
           </div>
         </div>
@@ -116,7 +168,7 @@
           <div class="req-item">
             <span id="req-oldest-name" style="color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;">-</span>
             <div style="display: flex; gap: 4px;">
-              <button class="icon-btn btn-approve" title="同意加入" onclick="respondAllianceApp(true)">✔</button>
+              <button class="icon-btn btn-approve" title="同意申請" onclick="respondAllianceApp(true)">✔</button>
               <button class="icon-btn btn-reject" title="拒絕申請" onclick="respondAllianceApp(false)">✖</button>
             </div>
           </div>
@@ -169,7 +221,7 @@
     </div>
   </div>
 
-  <!-- 底部控制列 -->
+  <!-- 底部控制列 (預設隱藏除建基地以外的按鈕) -->
   <div id="controls-bar">
     <button id="btn-back" class="key-btn back-btn" onclick="exitSubMenu()" style="display: none;">
       <span class="key-badge">~</span> <span>返回 / 退出</span>
@@ -177,13 +229,13 @@
     <button id="btn-core" class="key-btn" onclick="triggerMenuKey('E')">
       <span class="key-badge">E</span> <span id="label-e">建基地</span>
     </button>
-    <button id="btn-menu1" class="key-btn" onclick="triggerMenuKey('1')">
+    <button id="btn-menu1" class="key-btn" onclick="triggerMenuKey('1')" style="display: none;">
       <span class="key-badge">1</span> <span id="label-1">防禦塔選單</span>
     </button>
-    <button id="btn-menu2" class="key-btn" onclick="triggerMenuKey('2')">
+    <button id="btn-menu2" class="key-btn" onclick="triggerMenuKey('2')" style="display: none;">
       <span class="key-badge">2</span> <span id="label-2">軍隊徵召選單</span>
     </button>
-    <button id="btn-f" class="key-btn" onclick="triggerMenuKey('F')">
+    <button id="btn-f" class="key-btn" onclick="triggerMenuKey('F')" style="display: none;">
       <span class="key-badge">F</span> <span>切換軍隊模式</span>
     </button>
   </div>
@@ -211,8 +263,8 @@
   autoScaleGame();
 </script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/ui.js?v=5"></script>
-<script src="js/render.js?v=5"></script>
-<script src="game.js?v=5"></script>
+<script src="js/ui.js?v=13"></script>
+<script src="js/render.js?v=13"></script>
+<script src="game.js?v=13"></script>
 </body>
 </html>

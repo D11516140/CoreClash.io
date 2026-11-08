@@ -1,3 +1,94 @@
+// 🟢 全域選單狀態初始化保險
+window.activeMenu = window.activeMenu || null;
+window.buildMode = window.buildMode || null;
+
+// 💬 賽博風動態 Toast 提示彈窗
+let toastTimer = null;
+function showCyberToast(msg) {
+  const toast = document.getElementById('cyber-toast');
+  if (!toast) return;
+  toast.innerText = msg;
+  toast.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2200);
+}
+window.showCyberToast = showCyberToast;
+
+// 🟢 安全取得全域 Socket 實例
+function getSocket() {
+  return (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+}
+
+// 🟢 玩家 ID 初始化保險
+let myPlayerId = localStorage.getItem('corewar_player_id');
+if (!myPlayerId) {
+  myPlayerId = 'player_' + Math.random().toString(36).substring(2, 9);
+  localStorage.setItem('corewar_player_id', myPlayerId);
+}
+window.myPlayerId = myPlayerId;
+
+// ⚔️ 進入 PVP 戰局邏輯
+function joinBattleFromLobby() {
+  const nickInput = document.getElementById('nickname-input');
+  let name = nickInput ? nickInput.value.trim() : '';
+  if (!name) name = `指揮官_${myPlayerId.substring(0, 4)}`;
+
+  localStorage.setItem('corewar_player_name', name);
+  
+  const lobbyModal = document.getElementById('lobby-modal');
+  if (lobbyModal) lobbyModal.style.display = 'none';
+
+  const playerColor = (typeof selectedPlayerColor !== 'undefined' && selectedPlayerColor) ? selectedPlayerColor : '#ffb700';
+  const s = getSocket();
+  if (s && s.emit) {
+    s.emit('joinGame', { persistentId: myPlayerId, nickname: name, color: playerColor });
+  }
+}
+window.joinBattleFromLobby = joinBattleFromLobby;
+
+// 🎨 代表色選擇器 (預設黃色 #ffb700)
+let selectedPlayerColor = localStorage.getItem('corewar_player_color') || '#ffb700';
+
+function selectPlayerColor(color, el) {
+  selectedPlayerColor = color;
+  localStorage.setItem('corewar_player_color', color);
+  document.querySelectorAll('.color-dot').forEach(dot => dot.classList.remove('active'));
+  if (el) el.classList.add('active');
+  showCyberToast(`已切換指揮官代表色！`);
+}
+window.selectPlayerColor = selectPlayerColor;
+
+// 初始化代表色 UI 狀態
+window.addEventListener('DOMContentLoaded', () => {
+  const savedColor = localStorage.getItem('corewar_player_color') || '#ffb700';
+  selectedPlayerColor = savedColor;
+  document.querySelectorAll('.color-dot').forEach(dot => {
+    if (dot.getAttribute('data-color') === savedColor) {
+      dot.classList.add('active');
+    } else {
+      dot.classList.remove('active');
+    }
+  });
+});
+
+// 🚪 離開遊戲動作
+function confirmLeaveGame() {
+  showCustomConfirm(
+    '🚪 離開遊戲確認',
+    '確定要離開戰術指揮終端嗎？（地圖上的基地與建築將保持駐守狀態）',
+    () => {
+      showCyberToast('正在關閉指揮連線...');
+      setTimeout(() => {
+        window.close();
+        window.location.href = 'about:blank';
+      }, 600);
+    }
+  );
+}
+window.confirmLeaveGame = confirmLeaveGame;
+
 // 💬 賽博風格自訂確認框 Modal
 function showCustomConfirm(title, msg, onYes, showCancel = true) {
   const modal = document.getElementById('custom-confirm-modal');
@@ -19,11 +110,13 @@ function showCustomConfirm(title, msg, onYes, showCancel = true) {
 
   modal.style.display = 'flex';
 }
+window.showCustomConfirm = showCustomConfirm;
 
 function closeCustomConfirm() {
   const modal = document.getElementById('custom-confirm-modal');
   if (modal) modal.style.display = 'none';
 }
+window.closeCustomConfirm = closeCustomConfirm;
 
 let currentLeaderboardTab = 'PLAYER';
 
@@ -35,25 +128,29 @@ function switchLbTab(tab) {
   if (btnPlayer) btnPlayer.classList.toggle('active', tab === 'PLAYER');
   if (btnAlliance) btnAlliance.classList.toggle('active', tab === 'ALLIANCE');
 
-  if (typeof lastGameState !== 'undefined' && lastGameState) {
-    updateHUD(lastGameState);
+  if (window.lastGameState) {
+    updateHUD(window.lastGameState);
   }
 }
+window.switchLbTab = switchLbTab;
 
 function createAllianceFromUI() {
   const input = document.getElementById('alliance-name-input');
   const name = input ? input.value : '';
-  if (name.trim()) {
-    socket.emit('createAlliance', name.trim());
+  const s = getSocket();
+  if (name.trim() && s) {
+    s.emit('createAlliance', name.trim());
     input.value = '';
   }
 }
+window.createAllianceFromUI = createAllianceFromUI;
 
 function leaveAllianceFromUI() {
-  const me = lastGameState ? lastGameState.players[myPlayerId] : null;
+  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
   if (!me || !me.allianceId) return;
 
-  const ally = lastGameState.alliances[me.allianceId];
+  const ally = window.lastGameState.alliances[me.allianceId];
+  const s = getSocket();
   if (ally && ally.leaderId === me.id) {
     if (ally.memberIds.length > 1) {
       showCustomConfirm(
@@ -67,7 +164,7 @@ function leaveAllianceFromUI() {
       showCustomConfirm(
         '⚠️ 解散聯盟確認',
         '聯盟目前僅剩你一人，退出將直接【解散聯盟】，是否確定？',
-        () => { socket.emit('leaveAlliance'); }
+        () => { if (s) s.emit('leaveAlliance'); }
       );
       return;
     }
@@ -76,46 +173,52 @@ function leaveAllianceFromUI() {
   showCustomConfirm(
     '🛡️ 退出聯盟確認',
     '確定要退出當前聯盟嗎？',
-    () => { socket.emit('leaveAlliance'); }
+    () => { if (s) s.emit('leaveAlliance'); }
   );
 }
+window.leaveAllianceFromUI = leaveAllianceFromUI;
 
 function respondInviteFromUI(accept) {
-  const me = lastGameState ? lastGameState.players[myPlayerId] : null;
-  if (!me) return;
+  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  const s = getSocket();
+  if (!me || !s) return;
 
   if (me.pendingInvite) {
-    socket.emit('respondAllianceInvite', accept);
+    s.emit('respondAllianceInvite', accept);
   } else if (me.pendingPoach) {
-    socket.emit('respondPoachInvite', accept);
+    s.emit('respondPoachInvite', accept);
   }
 }
+window.respondInviteFromUI = respondInviteFromUI;
 
 function respondAllianceApp(accept) {
-  const me = lastGameState ? lastGameState.players[myPlayerId] : null;
-  if (!me || !me.allianceId) return;
+  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  const s = getSocket();
+  if (!me || !me.allianceId || !s) return;
 
-  const ally = lastGameState.alliances[me.allianceId];
+  const ally = window.lastGameState.alliances[me.allianceId];
   if (ally && ally.pendingRequests && ally.pendingRequests.length > 0) {
     const oldestReq = ally.pendingRequests[0];
-    socket.emit('respondAllianceApplication', {
+    s.emit('respondAllianceApplication', {
       applicantId: oldestReq.applicantId,
       accept: accept
     });
   }
 }
+window.respondAllianceApp = respondAllianceApp;
 
 function inspectPlayer(targetId) {
-  if (lastGameState && lastGameState.players[targetId]) {
-    pinnedTooltip = { type: 'COMMANDER', id: targetId };
+  if (window.lastGameState && window.lastGameState.players[targetId]) {
+    window.pinnedTooltip = { type: 'COMMANDER', id: targetId };
   }
 }
+window.inspectPlayer = inspectPlayer;
 
 function openSettingsModal() {
-  const me = lastGameState ? lastGameState.players[myPlayerId] : null;
-  if (!me || !me.allianceId || !lastGameState.alliances[me.allianceId]) return;
+  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  if (!me || !me.allianceId || !window.lastGameState.alliances[me.allianceId]) return;
 
-  const ally = lastGameState.alliances[me.allianceId];
+  const ally = window.lastGameState.alliances[me.allianceId];
   const currMode = ally.recruitmentMode || 'REVIEW';
 
   document.getElementById('opt-free')?.classList.toggle('active', currMode === 'FREE');
@@ -125,38 +228,46 @@ function openSettingsModal() {
   const modal = document.getElementById('settings-modal');
   if (modal) modal.style.display = 'flex';
 }
+window.openSettingsModal = openSettingsModal;
 
 function closeSettingsModal() {
   const modal = document.getElementById('settings-modal');
   if (modal) modal.style.display = 'none';
 }
+window.closeSettingsModal = closeSettingsModal;
 
 function setRecruitmentModeUI(mode) {
-  socket.emit('setRecruitmentMode', mode);
+  const s = getSocket();
+  if (s) s.emit('setRecruitmentMode', mode);
   closeSettingsModal();
 }
+window.setRecruitmentModeUI = setRecruitmentModeUI;
 
 function transferLeadershipUI(targetId, targetName) {
+  const s = getSocket();
   showCustomConfirm(
     '👑 轉讓盟主確認',
     `確定要將盟主大權無條件移交給【${targetName}】嗎？`,
-    () => { socket.emit('transferLeadership', targetId); }
+    () => { if (s) s.emit('transferLeadership', targetId); }
   );
 }
+window.transferLeadershipUI = transferLeadershipUI;
 
 function kickMemberUI(targetId, targetName) {
+  const s = getSocket();
   showCustomConfirm(
     '🚫 踢除成員確認',
     `確定要將成員【${targetName}】踢出聯盟嗎？`,
-    () => { socket.emit('kickMember', targetId); }
+    () => { if (s) s.emit('kickMember', targetId); }
   );
 }
+window.kickMemberUI = kickMemberUI;
 
 function openMembersModal() {
-  const me = lastGameState ? lastGameState.players[myPlayerId] : null;
-  if (!me || !me.allianceId || !lastGameState.alliances[me.allianceId]) return;
+  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
+  if (!me || !me.allianceId || !window.lastGameState.alliances[me.allianceId]) return;
 
-  const ally = lastGameState.alliances[me.allianceId];
+  const ally = window.lastGameState.alliances[me.allianceId];
   const isMeLeader = (ally.leaderId === me.id);
 
   const titleEl = document.getElementById('modal-alliance-title');
@@ -165,7 +276,7 @@ function openMembersModal() {
   if (titleEl) titleEl.innerText = `🛡️ [${ally.name}] 成員列表 (${ally.memberIds.length} 人)`;
 
   if (listEl) {
-    const members = ally.memberIds.map(id => lastGameState.players[id]).filter(Boolean);
+    const members = ally.memberIds.map(id => window.lastGameState.players[id]).filter(Boolean);
     members.sort((a, b) => (b.score || 0) - (a.score || 0));
 
     listEl.innerHTML = members.map(m => {
@@ -207,11 +318,13 @@ function openMembersModal() {
   const modal = document.getElementById('members-modal');
   if (modal) modal.style.display = 'flex';
 }
+window.openMembersModal = openMembersModal;
 
 function closeMembersModal() {
   const modal = document.getElementById('members-modal');
   if (modal) modal.style.display = 'none';
 }
+window.closeMembersModal = closeMembersModal;
 
 // 🟢 DOM 節點快取存取器
 const uiElements = {
@@ -247,9 +360,12 @@ let lastLbHTMLCache = '';
 let lastHudDataCache = '';
 
 function updateUI() {
-  const me = lastGameState ? lastGameState.players[myPlayerId] : null;
+  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
   if (!me) return;
   if (!uiElements.btnCore) initUIElementsCache();
+
+  const activeMenu = window.activeMenu;
+  const buildMode = window.buildMode;
 
   const currentStateKey = `${me.isDead}_${!!me.core}_${activeMenu}_${buildMode}`;
   if (currentStateKey === lastUIStateCache) return;
@@ -262,6 +378,7 @@ function updateUI() {
     }
   });
 
+  // 情況 A: 玩家陣亡且有核心
   if (me.isDead && me.core) {
     if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
     if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
@@ -271,6 +388,7 @@ function updateUI() {
     return;
   }
 
+  // 情況 B: 未放置核心 (建基地模式)
   if (!me.core) {
     if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
     if (uiElements.btnCore) uiElements.btnCore.style.display = 'flex';
@@ -282,6 +400,7 @@ function updateUI() {
     return;
   }
 
+  // 情況 C: 防禦塔選單 / 建造防禦塔預覽中
   if (activeMenu === 'TOWER_MENU' || buildMode === 'TOWER_BASIC' || buildMode === 'TOWER_ADVANCED') {
     if (uiElements.btnBack) uiElements.btnBack.style.display = 'flex';
     if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
@@ -297,6 +416,7 @@ function updateUI() {
     return;
   }
 
+  // 情況 D: 軍隊徵召選單
   if (activeMenu === 'ARMY_MENU') {
     if (uiElements.btnBack) uiElements.btnBack.style.display = 'flex';
     if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
@@ -309,6 +429,7 @@ function updateUI() {
     return;
   }
 
+  // 情況 E: 預設主介面 (已有核心)
   if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
   if (uiElements.btnCore) uiElements.btnCore.style.display = 'flex';
   if (uiElements.btn1) uiElements.btn1.style.display = 'flex';
@@ -319,6 +440,7 @@ function updateUI() {
   if (uiElements.lbl1) uiElements.lbl1.innerText = '防禦塔選單';
   if (uiElements.lbl2) uiElements.lbl2.innerText = '軍隊徵召選單';
 }
+window.updateUI = updateUI;
 
 function updateHUD(state) {
   const me = state.players[myPlayerId];
@@ -394,7 +516,7 @@ function updateHUD(state) {
     }
   }
 
-  // 🟢 2. HUD 數據與 4 段移速變色 (80%+ 綠 / 51-80% 黃 / 21-50% 紅 / <=20% 暗紅)[cite: 4]
+  // 2. HUD 數據與 4 段移速變色
   if (me) {
     const totalWeight = me.army.reduce((acc, s) => acc + (s.type === 'HEAVY' ? 2 : 1), 0);
     const coreHp = me.core ? Math.ceil(me.core.hp) : -1;
@@ -423,7 +545,7 @@ function updateHUD(state) {
         if (pct > 80) uiElements.uiMoveSpeed.style.color = '#00ff66';
         else if (pct >= 51) uiElements.uiMoveSpeed.style.color = '#ffb700';
         else if (pct >= 21) uiElements.uiMoveSpeed.style.color = '#ff0055';
-        else uiElements.uiMoveSpeed.style.color = '#800000'; // 暗紅
+        else uiElements.uiMoveSpeed.style.color = '#800000';
       }
 
       if (uiElements.uiArmyMode) {
@@ -436,7 +558,85 @@ function updateHUD(state) {
         document.getElementById('game-over-modal').style.display = 'flex';
       }
     }
+
+    // 3. 🛡️ 聯盟 UI 面板動態切換 & 多成員清單渲染修復
+    const createBox = document.getElementById('alliance-create-box');
+    const infoBox = document.getElementById('alliance-info-box');
+    const inviteBox = document.getElementById('alliance-invite-box');
+
+    if (me.allianceId && state.alliances && state.alliances[me.allianceId]) {
+      const ally = state.alliances[me.allianceId];
+      if (createBox) createBox.style.display = 'none';
+      if (inviteBox) inviteBox.style.display = 'none';
+      if (infoBox) infoBox.style.display = 'flex';
+
+      const dispName = document.getElementById('alliance-display-name');
+      if (dispName) dispName.innerHTML = `🛡️ <span style="color:${ally.color || 'var(--primary)'}">${ally.name}</span>`;
+
+      const settingBtn = document.getElementById('alliance-setting-btn');
+      if (settingBtn) settingBtn.style.display = (ally.leaderId === me.id) ? 'inline-block' : 'none';
+
+      const memberCount = document.getElementById('alliance-member-count');
+      if (memberCount) memberCount.innerText = `成員 (${ally.memberIds.length}人)`;
+
+      // 🏆 聯盟前 3 名成員預覽清單
+      const topMembers = document.getElementById('alliance-top-members');
+      if (topMembers) {
+        const memberObjs = ally.memberIds
+          .map(id => state.players[id])
+          .filter(Boolean)
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+          .slice(0, 3);
+
+        topMembers.innerHTML = memberObjs.map(m => {
+          const isLeader = (m.id === ally.leaderId);
+          const isMe = (m.id === myPlayerId);
+          const nameColor = isMe ? 'var(--success)' : (isLeader ? 'var(--warning)' : '#fff');
+          const roleIcon = isLeader ? '👑 ' : '🛡️ ';
+          return `<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
+            <span style="color:${nameColor}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px;">${roleIcon}${m.name || m.id.substring(0, 4)}</span>
+            <span style="color: var(--primary); font-weight: bold; font-size: 10px;">${m.score || 0} Pts</span>
+          </div>`;
+        }).join('');
+      }
+
+      const reqContainer = document.getElementById('alliance-requests-container');
+      if (ally.leaderId === me.id && ally.pendingRequests && ally.pendingRequests.length > 0) {
+        if (reqContainer) reqContainer.style.display = 'flex';
+        const reqTitle = document.getElementById('req-count-title');
+        if (reqTitle) reqTitle.innerText = `📥 申請清單 (${ally.pendingRequests.length})`;
+        
+        const oldestReq = ally.pendingRequests[0];
+        const reqApplicant = state.players[oldestReq.applicantId];
+        const reqNameEl = document.getElementById('req-oldest-name');
+        if (reqNameEl) reqNameEl.innerText = reqApplicant ? (reqApplicant.name || oldestReq.applicantId.substring(0, 4)) : '未知';
+      } else {
+        if (reqContainer) reqContainer.style.display = 'none';
+      }
+    } else {
+      if (infoBox) infoBox.style.display = 'none';
+      if (createBox) createBox.style.display = 'block';
+
+      if (me.pendingInvite || me.pendingPoach) {
+        if (inviteBox) inviteBox.style.display = 'flex';
+        const inviteText = document.getElementById('invite-notice-text');
+        if (inviteText) {
+          if (me.pendingInvite) {
+            const inviterAlly = state.alliances[me.pendingInvite.allianceId];
+            const allyName = inviterAlly ? inviterAlly.name : '聯盟';
+            inviteText.innerText = `📩 收到 [${allyName}] 邀請`;
+          } else if (me.pendingPoach) {
+            const poacherAlly = state.alliances[me.pendingPoach.allianceId];
+            const allyName = poacherAlly ? poacherAlly.name : '聯盟';
+            inviteText.innerText = `⚡ 收到 [${allyName}] 挖腳`;
+          }
+        }
+      } else {
+        if (inviteBox) inviteBox.style.display = 'none';
+      }
+    }
   }
 
   updateUI();
 }
+window.updateHUD = updateHUD;

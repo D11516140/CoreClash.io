@@ -1,16 +1,25 @@
 // 🚀 game.js - 前端主控制器 (Socket 通訊、輸入監聽與流程調度)
 
 const socket = io();
+window.socket = socket;
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-let lastGameState = null;
+window.lastGameState = null;
+window.activeMenu = null;
+window.buildMode = null;
+window.pinnedTooltip = null;
+window.activeTooltipButtons = [];
 
-let myPlayerId = localStorage.getItem('corewar_player_id');
-if (!myPlayerId) {
-  myPlayerId = 'player_' + Math.random().toString(36).substring(2, 9);
-  localStorage.setItem('corewar_player_id', myPlayerId);
+if (typeof myPlayerId === 'undefined' || !myPlayerId) {
+  myPlayerId = localStorage.getItem('corewar_player_id');
+  if (!myPlayerId) {
+    myPlayerId = 'player_' + Math.random().toString(36).substring(2, 9);
+    localStorage.setItem('corewar_player_id', myPlayerId);
+  }
 }
+window.myPlayerId = myPlayerId;
 
 const savedNickname = localStorage.getItem('corewar_player_name');
 if (savedNickname) {
@@ -18,19 +27,10 @@ if (savedNickname) {
   if (nickInput) nickInput.value = savedNickname;
 }
 
-function joinBattleFromLobby() {
-  const nickInput = document.getElementById('nickname-input');
-  let name = nickInput ? nickInput.value.trim() : '';
-  if (!name) name = `指揮官_${myPlayerId.substring(0, 4)}`;
-
-  localStorage.setItem('corewar_player_name', name);
-  document.getElementById('lobby-modal').style.display = 'none';
-
-  socket.emit('joinGame', { persistentId: myPlayerId, nickname: name });
-}
-
 document.getElementById('nickname-input')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') joinBattleFromLobby();
+  if (e.key === 'Enter') {
+    if (typeof joinBattleFromLobby === 'function') joinBattleFromLobby();
+  }
 });
 
 const keys = { w: false, a: false, s: false, d: false };
@@ -40,17 +40,13 @@ let rawClientX = 0;
 let rawClientY = 0;
 let camera = { x: 800, y: 600 };
 
-let activeMenu = null;
-let buildMode = null;
 let showDetailedInfo = false;
 
-let pinnedTooltip = null;
-let activeTooltipButtons = [];
-
 function clearPinnedTooltip() {
-  pinnedTooltip = null;
-  activeTooltipButtons = [];
+  window.pinnedTooltip = null;
+  window.activeTooltipButtons = [];
 }
+window.clearPinnedTooltip = clearPinnedTooltip;
 
 const particles = [];
 const floatingTexts = [];
@@ -62,42 +58,60 @@ window.addEventListener('scroll', () => { cachedCanvasRect = canvas.getBoundingC
 
 function triggerMenuKey(key) {
   clearPinnedTooltip();
-  const me = lastGameState ? lastGameState.players[myPlayerId] : null;
+  const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
   if (!me || me.isDead) return;
 
+  // 1. 未放置核心狀態
   if (!me.core) {
-    if (key === 'E') buildMode = (buildMode === 'CORE') ? null : 'CORE';
-    updateUI();
+    if (key === 'E') window.buildMode = (window.buildMode === 'CORE') ? null : 'CORE';
+    if (typeof updateUI === 'function') updateUI();
     return;
   }
 
-  if (activeMenu === 'TOWER_MENU' || buildMode === 'TOWER_BASIC' || buildMode === 'TOWER_ADVANCED') {
-    if (key === '1') { buildMode = (buildMode === 'TOWER_BASIC') ? null : 'TOWER_BASIC'; activeMenu = null; }
-    else if (key === '2') { buildMode = (buildMode === 'TOWER_ADVANCED') ? null : 'TOWER_ADVANCED'; activeMenu = null; }
-    updateUI();
+  // 2. 防禦塔選單或防禦塔建造預覽中
+  if (window.activeMenu === 'TOWER_MENU' || window.buildMode === 'TOWER_BASIC' || window.buildMode === 'TOWER_ADVANCED') {
+    if (key === '1') {
+      window.buildMode = (window.buildMode === 'TOWER_BASIC') ? null : 'TOWER_BASIC';
+      window.activeMenu = (window.buildMode === null) ? 'TOWER_MENU' : null;
+    } else if (key === '2') {
+      window.buildMode = (window.buildMode === 'TOWER_ADVANCED') ? null : 'TOWER_ADVANCED';
+      window.activeMenu = (window.buildMode === null) ? 'TOWER_MENU' : null;
+    }
+    if (typeof updateUI === 'function') updateUI();
     return;
   }
 
-  if (activeMenu === 'ARMY_MENU') {
+  // 3. 軍隊徵召選單中
+  if (window.activeMenu === 'ARMY_MENU') {
     if (key === '1') sendAction('buySoldier', 'BASIC');
     else if (key === '2') sendAction('buySoldier', 'HEAVY');
-    updateUI();
+    if (typeof updateUI === 'function') updateUI();
     return;
   }
 
-  if (key === 'E') { sendAction('teleportCore'); buildMode = null; }
-  else if (key === '1') { activeMenu = 'TOWER_MENU'; buildMode = null; }
-  else if (key === '2') { activeMenu = 'ARMY_MENU'; buildMode = null; }
+  // 4. 已有基地時的主選單
+  if (key === 'E') { sendAction('teleportCore'); window.buildMode = null; }
+  else if (key === '1') { window.activeMenu = 'TOWER_MENU'; window.buildMode = null; }
+  else if (key === '2') { window.activeMenu = 'ARMY_MENU'; window.buildMode = null; }
   else if (key === 'F') { sendAction('toggleArmyState'); }
-  updateUI();
-}
 
-function exitSubMenu() {
-  activeMenu = null;
-  buildMode = null;
-  clearPinnedTooltip();
-  updateUI();
+  if (typeof updateUI === 'function') updateUI();
 }
+window.triggerMenuKey = triggerMenuKey;
+
+// 階層式返回選單邏輯
+function exitSubMenu() {
+  if (window.buildMode === 'TOWER_BASIC' || window.buildMode === 'TOWER_ADVANCED') {
+    window.buildMode = null;
+    window.activeMenu = 'TOWER_MENU'; // 建造預覽時取消 -> 返回防禦塔選單
+  } else {
+    window.activeMenu = null;
+    window.buildMode = null; // 防禦塔或軍隊選單時取消 -> 返回主介面
+  }
+  clearPinnedTooltip();
+  if (typeof updateUI === 'function') updateUI();
+}
+window.exitSubMenu = exitSubMenu;
 
 canvas.addEventListener('mousemove', (e) => {
   rawClientX = e.clientX;
@@ -111,7 +125,7 @@ canvas.addEventListener('mousedown', (e) => {
     const clickX = mouseScreenPos.x;
     const clickY = mouseScreenPos.y;
 
-    for (const btn of activeTooltipButtons) {
+    for (const btn of window.activeTooltipButtons) {
       if (clickX >= btn.x && clickX <= btn.x + btn.w && clickY >= btn.y && clickY <= btn.y + btn.h) {
         btn.onClick();
         clearPinnedTooltip();
@@ -119,85 +133,95 @@ canvas.addEventListener('mousedown', (e) => {
       }
     }
 
-    const me = lastGameState ? lastGameState.players[myPlayerId] : null;
+    const me = window.lastGameState ? window.lastGameState.players[myPlayerId] : null;
     if (!me || me.isDead) return;
 
-    if (buildMode === 'CORE' && !me.core) {
-      sendAction('placeCore', mousePos); buildMode = null; clearPinnedTooltip(); updateUI(); return;
-    } else if (buildMode === 'TOWER_BASIC' && me.core) {
-      if (me.gold >= 100) sendAction('buyTower', { x: mousePos.x, y: mousePos.y, type: 'BASIC' }); return;
-    } else if (buildMode === 'TOWER_ADVANCED' && me.core) {
-      if (me.gold >= 200) sendAction('buyTower', { x: mousePos.x, y: mousePos.y, type: 'ADVANCED' }); return;
+    if (window.buildMode === 'CORE' && !me.core) {
+      sendAction('placeCore', mousePos);
+      window.buildMode = null;
+      clearPinnedTooltip();
+      if (typeof updateUI === 'function') updateUI();
+      return;
+    } else if (window.buildMode === 'TOWER_BASIC' && me.core) {
+      if (me.gold >= 100) {
+        sendAction('buyTower', { x: mousePos.x, y: mousePos.y, type: 'BASIC' });
+        // 保持 buildMode === 'TOWER_BASIC'，實現連續建造！
+        if (typeof updateUI === 'function') updateUI();
+      }
+      return;
+    } else if (window.buildMode === 'TOWER_ADVANCED' && me.core) {
+      if (me.gold >= 200) {
+        sendAction('buyTower', { x: mousePos.x, y: mousePos.y, type: 'ADVANCED' });
+        // 保持 buildMode === 'TOWER_ADVANCED'，實現連續建造！
+        if (typeof updateUI === 'function') updateUI();
+      }
+      return;
     }
 
     let clickedObj = findEntityAtPos(mousePos.x, mousePos.y);
-    if (clickedObj) pinnedTooltip = { type: clickedObj.type, id: clickedObj.id };
+    if (clickedObj) window.pinnedTooltip = { type: clickedObj.type, id: clickedObj.id };
     else clearPinnedTooltip();
   }
 });
 
 function findEntityById(id, type) {
-  if (!lastGameState) return null;
+  if (!window.lastGameState) return null;
   if (type === 'TOWER') {
-    const t = lastGameState.towers.find(item => item.id === id);
+    const t = window.lastGameState.towers.find(item => item.id === id);
     if (t) return { type, id, obj: t, x: t.x, y: t.y };
   }
   if (type === 'SOLDIER') {
-    for (const p of Object.values(lastGameState.players)) {
+    for (const p of Object.values(window.lastGameState.players)) {
       const s = p.army.find(item => item.id === id);
       if (s) return { type, id, obj: s, ownerId: p.id, x: s.x, y: s.y };
     }
-    if (lastGameState.neutralSoldiers) {
-      const ns = lastGameState.neutralSoldiers.find(item => item.id === id);
+    if (window.lastGameState.neutralSoldiers) {
+      const ns = window.lastGameState.neutralSoldiers.find(item => item.id === id);
       if (ns) return { type, id, obj: ns, x: ns.x, y: ns.y };
     }
   }
   if (type === 'CORE') {
-    for (const p of Object.values(lastGameState.players)) {
+    for (const p of Object.values(window.lastGameState.players)) {
       if (p.core && p.core.id === id && p.core.hp > 0) return { type, id, obj: p.core, x: p.core.x, y: p.core.y };
     }
   }
   if (type === 'COMMANDER') {
-    const p = lastGameState.players[id];
+    const p = window.lastGameState.players[id];
     if (p && !p.isDead) return { type, id, obj: p, x: p.x, y: p.y };
   }
   if (type === 'MONSTER') {
-    const m = lastGameState.monsters.find(item => item.id === id);
+    const m = window.lastGameState.monsters.find(item => item.id === id);
     if (m) return { type, id, obj: m, x: m.x, y: m.y };
   }
   return null;
 }
 
-// 🟢 點擊判定圖層順序 (1. 部隊小兵 -> 2. 指揮官 -> 3. 怪物 -> 4. 防禦塔(矩形) -> 5. 基地核心)[cite: 4]
 function findEntityAtPos(wx, wy) {
-  if (!lastGameState) return null;
+  if (!window.lastGameState) return null;
 
-  // 1. 部隊小兵
-  for (const p of Object.values(lastGameState.players)) {
+  for (const p of Object.values(window.lastGameState.players)) {
     for (const s of p.army) {
       if (Math.hypot(wx - s.x, wy - s.y) <= (s.radius || 5) + 4) {
         return { type: 'SOLDIER', id: s.id, obj: s, ownerId: p.id, x: s.x, y: s.y };
       }
     }
   }
-  if (lastGameState.neutralSoldiers) {
-    for (const ns of lastGameState.neutralSoldiers) {
+  if (window.lastGameState.neutralSoldiers) {
+    for (const ns of window.lastGameState.neutralSoldiers) {
       if (Math.hypot(wx - ns.x, wy - ns.y) <= (ns.radius || 5) + 4) {
         return { type: 'SOLDIER', id: ns.id, obj: ns, x: ns.x, y: ns.y };
       }
     }
   }
 
-  // 2. 指揮官
-  for (const p of Object.values(lastGameState.players)) {
+  for (const p of Object.values(window.lastGameState.players)) {
     if (!p.isDead && Math.hypot(wx - p.x, wy - p.y) <= 14) {
       return { type: 'COMMANDER', id: p.id, obj: p, x: p.x, y: p.y };
     }
   }
 
-  // 3. 怪物
-  if (lastGameState.monsters) {
-    for (const m of lastGameState.monsters) {
+  if (window.lastGameState.monsters) {
+    for (const m of window.lastGameState.monsters) {
       const mRadius = m.isRaid ? 10 : 8;
       if (Math.hypot(wx - m.x, wy - m.y) <= mRadius + 3) {
         return { type: 'MONSTER', id: m.id, obj: m, x: m.x, y: m.y };
@@ -205,15 +229,13 @@ function findEntityAtPos(wx, wy) {
     }
   }
 
-  // 4. 防禦塔 (精準矩形範圍 14px)
-  for (const t of lastGameState.towers) {
+  for (const t of window.lastGameState.towers) {
     if (Math.abs(wx - t.x) <= 14 && Math.abs(wy - t.y) <= 14) {
       return { type: 'TOWER', id: t.id, obj: t, x: t.x, y: t.y };
     }
   }
 
-  // 5. 基地核心
-  for (const p of Object.values(lastGameState.players)) {
+  for (const p of Object.values(window.lastGameState.players)) {
     if (p.core && p.core.hp > 0 && Math.abs(wx - p.core.x) <= 18 && Math.abs(wy - p.core.y) <= 18) {
       return { type: 'CORE', id: p.core.id, obj: p.core, x: p.core.x, y: p.core.y };
     }
@@ -223,7 +245,7 @@ function findEntityAtPos(wx, wy) {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.repeat) return; // 過濾 OS 長按 keydown 封包
+  if (e.repeat) return;
 
   if (e.code === 'Tab') { e.preventDefault(); showDetailedInfo = !showDetailedInfo; return; }
   if (e.code === 'KeyW') keys.w = true;
@@ -259,6 +281,7 @@ function restartGame() {
   exitSubMenu();
   socket.emit('restartGame');
 }
+window.restartGame = restartGame;
 
 function returnToLobby() {
   document.getElementById('game-over-modal').style.display = 'none';
@@ -266,9 +289,10 @@ function returnToLobby() {
   exitSubMenu();
   socket.emit('returnToLobby');
 }
+window.returnToLobby = returnToLobby;
 
 socket.on('gameState', (state) => {
-  lastGameState = state;
+  window.lastGameState = state;
 
   if (state.events) {
     state.events.forEach(ev => {
@@ -281,12 +305,12 @@ socket.on('gameState', (state) => {
     });
   }
 
-  updateHUD(state);
+  if (typeof updateHUD === 'function') updateHUD(state);
 });
 
 function renderLoop() {
-  if (lastGameState) {
-    const state = lastGameState;
+  if (window.lastGameState) {
+    const state = window.lastGameState;
     const me = state.players[myPlayerId];
 
     if (me && !me.isDead) { camera.x = me.x; camera.y = me.y; }
@@ -299,7 +323,7 @@ function renderLoop() {
     mousePos.x = wPos.x;
     mousePos.y = wPos.y;
 
-    drawGameScene(state);
+    if (typeof drawGameScene === 'function') drawGameScene(state);
   }
   requestAnimationFrame(renderLoop);
 }
