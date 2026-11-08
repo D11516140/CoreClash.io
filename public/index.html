@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CoreClash.io - Cyber RTS</title>
-  <link rel="stylesheet" href="css/style.css?v=20">
+  <link rel="stylesheet" href="css/style.css?v=21">
 </head>
 <body>
 
@@ -167,7 +167,7 @@
       </div>
     </div>
 
-    <!-- 🛠️ 二階沙盒開發者面板 (已移除退出按鈕) -->
+    <!-- 🛠️ 二階沙盒開發者面板 -->
     <div id="sandbox-dev-card" style="display: none;">
       <div class="dev-panel-title">🛠️ 沙盒開發者面板</div>
 
@@ -183,7 +183,8 @@
         <div id="dev-tab-buff" class="dev-sub-panel active">
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxAddGold(10000)">💰 +10,000G</button>
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxAddLevel(1)">⬆️ +1 等級</button>
-          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px; grid-column: span 2;" onclick="sandboxMaxLevel()">👑 等級封頂</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxMaxLevel()">👑 等級封頂</button>
+          <button class="alliance-btn dev-btn-green" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxToggleGodMode()">🛡️ 無敵模式</button>
         </div>
 
         <!-- 2. 生怪頁面 -->
@@ -200,13 +201,15 @@
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxSpawnEnemySoldier('HEAVY')">🛡️ 敵重裝兵</button>
         </div>
 
-        <!-- 4. 重置頁面 (綠色專屬按鈕) -->
+        <!-- 4. 重置頁面 -->
         <div id="dev-tab-reset" class="dev-sub-panel">
           <button class="alliance-btn dev-btn-green" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxHealAllUnits()">💚 恢復血量</button>
           <button class="alliance-btn dev-btn-green" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxClearEnemies()">💚 清除敵方</button>
           <button class="alliance-btn leave-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxClearTowers()">💥 清除防禦塔</button>
+          <button class="alliance-btn leave-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxClearAllSoldiers()">💥 重置部隊</button>
+          <button class="alliance-btn leave-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxResetCore()">💥 重置基地</button>
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px; background: rgba(255,255,255,0.1);" onclick="sandboxResetExp()">✨ 重置經驗</button>
-          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px; background: rgba(255,255,255,0.1); grid-column: span 2;" onclick="sandboxResetGold()">🪙 重置金幣(250)</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px; background: rgba(255,255,255,0.1);" onclick="sandboxResetGold()">🪙 重置金幣(250)</button>
         </div>
       </div>
     </div>
@@ -264,9 +267,9 @@
   }
 </script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/sandboxManager.js?v=20"></script>
-<script src="js/ui.js?v=20"></script>
-<script src="js/render.js?v=20"></script>
-<script src="game.js?v=20"></script>
+<script src="js/sandboxManager.js?v=21"></script>
+<script src="js/ui.js?v=21"></script>
+<script src="js/render.js?v=21"></script>
+<script src="game.js?v=21"></script>
 </body>
 </html>

@@ -59,10 +59,13 @@
     sandboxState.monsters.forEach(m => list.push({ type: 'MONSTER', id: m.id, x: m.x, y: m.y, hp: m.hp, ref: m }));
 
     Object.values(sandboxState.players).forEach(p => {
-      if (p.id !== ownerId && !p.isDead && p.isOnline) {
+      if (p.id !== ownerId && !p.isDead && p.isOnline && !p.isDummy) {
         list.push({ type: 'COMMANDER', id: p.id, x: p.x, y: p.y, hp: p.hp, ref: p });
       }
-      if (p.id !== ownerId) {
+    });
+
+    Object.values(sandboxState.players).forEach(p => {
+      if (p.id !== ownerId && !p.isDead) {
         p.army.forEach(s => list.push({ type: 'SOLDIER', id: s.id, x: s.x, y: s.y, hp: s.hp, ref: s }));
       }
     });
@@ -111,6 +114,12 @@
   }
 
   function applyDamage(target, damage, attackerOwnerId) {
+    if (target.type === 'COMMANDER' || target.type === 'CORE') {
+      const ownerId = target.type === 'COMMANDER' ? target.ref.id : target.ref.ownerId;
+      const owner = sandboxState.players[ownerId];
+      if (owner && owner.isInvincible) return;
+    }
+
     target.ref.hp -= damage;
     target.ref.lastHitTick = sandboxState.tickCount;
 
@@ -123,7 +132,6 @@
       });
     }
 
-    const pid = getPlayerId();
     const attackerP = sandboxState.players[attackerOwnerId];
 
     if (target.type === 'COMMANDER' && target.ref.hp <= 0 && !target.ref.isDead) {
@@ -135,6 +143,7 @@
       if (owner) {
         owner.isDead = true;
         owner.core = null;
+        owner.army = [];
 
         sandboxState.towers.forEach(t => {
           if (t.ownerId === owner.id) {
@@ -195,6 +204,7 @@
           allianceId: null,
           isDead: false,
           isOnline: true,
+          isInvincible: false,
           speedRatio: 1.0,
           score: 0,
           level: 1,
@@ -213,7 +223,8 @@
           radius: 12,
           army: [],
           isDead: false,
-          isOnline: true
+          isOnline: false,
+          isDummy: true
         }
       },
       alliances: {},
@@ -286,6 +297,17 @@
     }
   }
 
+  function sandboxToggleGodMode() {
+    if (!isSandboxActive) return;
+    const pid = getPlayerId();
+    const p = sandboxState.players[pid];
+    if (p) {
+      p.isInvincible = !p.isInvincible;
+      const statusText = p.isInvincible ? '🛡️ 無敵模式已開啟 (鎖血)' : '❌ 無敵模式已關閉';
+      sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: statusText, color: p.isInvincible ? '#00ff66' : '#ff0055' });
+    }
+  }
+
   function sandboxSpawnMonster(isRaid = false) {
     if (!isSandboxActive) return;
     const pid = getPlayerId();
@@ -318,27 +340,7 @@
 
   function sandboxSpawnEnemySoldier(type = 'BASIC') {
     if (!isSandboxActive) return;
-    const pid = getPlayerId();
-    const p = sandboxState.players[pid];
-    if (!p) return;
-
-    const isHeavy = type === 'HEAVY';
-    const cfg = isHeavy ? CONFIG.SOLDIER.HEAVY : CONFIG.SOLDIER.BASIC;
-    const enemyAI = sandboxState.players['enemy_ai'];
-
-    enemyAI.army.push({
-      id: `soldier_enemy_${counters.soldierIdCounter++}`,
-      ownerId: 'enemy_ai',
-      type: type,
-      x: p.x + 180 + (Math.random() * 40 - 20),
-      y: p.y + (Math.random() * 40 - 20),
-      hp: cfg.HP, maxHp: cfg.HP,
-      atk: cfg.ATK, speed: cfg.SPEED,
-      radius: cfg.RADIUS, state: 'FREE',
-      attackCooldownSec: 0
-    });
-
-    sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x + 180, y: p.y - 15, text: `⚠️ 敵方${isHeavy ? '重裝' : '步'}兵`, color: '#ff0055' });
+    window.buildMode = (type === 'HEAVY') ? 'ENEMY_SOLDIER_HEAVY' : 'ENEMY_SOLDIER_BASIC';
   }
 
   function sandboxHealAllUnits() {
@@ -364,6 +366,33 @@
   function sandboxClearTowers() {
     if (!isSandboxActive) return;
     sandboxState.towers = [];
+  }
+
+  // 🟢 5. 重置部隊按鈕 (包含敵我與中立)
+  function sandboxClearAllSoldiers() {
+    if (!isSandboxActive) return;
+    Object.values(sandboxState.players).forEach(p => { p.army = []; });
+    sandboxState.neutralSoldiers = [];
+    const pid = getPlayerId();
+    const p = sandboxState.players[pid];
+    if (p) {
+      sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: '💥 全場部隊已重置清空！', color: '#ff0055' });
+    }
+  }
+
+  // 🟢 1. 重置基地時清空塔、部隊與野怪
+  function sandboxResetCore() {
+    if (!isSandboxActive) return;
+    const pid = getPlayerId();
+    const p = sandboxState.players[pid];
+    if (p && p.core) {
+      sandboxState.events.push({ type: 'EXPLOSION', x: p.core.x, y: p.core.y, color: '#ff0055', count: 24 });
+      p.core = null;
+      p.army = []; // 清空部隊
+      sandboxState.towers = sandboxState.towers.filter(t => t.ownerId !== pid); // 清空該玩家防禦塔
+      sandboxState.monsters = []; // 清空入侵野怪
+      sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: '💥 基地、塔與部隊已重置！', color: '#ff0055' });
+    }
   }
 
   function sandboxResetExp() {
@@ -400,11 +429,8 @@
       p.spawnTimerSec = 0;
       p.raidTimerSec = 0;
       p.survivalTime = 0;
-
       p.isDead = false;
       p.hp = p.maxHp;
-      p.x = cx;
-      p.y = cy;
 
       sandboxState.events.push({ type: 'EXPLOSION', x: cx, y: cy, color: '#00f0ff', count: 16 });
     } else if (action === 'buyTower') {
@@ -445,20 +471,50 @@
         });
         sandboxState.events.push({ type: 'FLOAT_TEXT', x: tx, y: ty - 15, text: '⚠️ 敵方防禦塔放置', color: '#ff0055' });
       }
+    } else if (action === 'placeEnemySoldier') {
+      const isHeavy = data.type === 'HEAVY';
+      const cfg = isHeavy ? CONFIG.SOLDIER.HEAVY : CONFIG.SOLDIER.BASIC;
+      const enemyAI = sandboxState.players['enemy_ai'];
+
+      // 🟢 3. 敵軍召喚設定對齊 server.js
+      enemyAI.army.push({
+        id: `soldier_enemy_${counters.soldierIdCounter++}`,
+        ownerId: 'enemy_ai',
+        type: data.type,
+        x: data.x,
+        y: data.y,
+        anchorX: data.x,
+        anchorY: data.y,
+        targetId: null,
+        returning: false,
+        hp: cfg.HP, maxHp: cfg.HP,
+        atk: cfg.ATK, speed: cfg.SPEED,
+        radius: cfg.RADIUS,
+        state: 'HOLD',
+        attackCooldownSec: 0
+      });
+
+      sandboxState.events.push({ type: 'FLOAT_TEXT', x: data.x, y: data.y - 15, text: `⚠️ 敵方${isHeavy ? '重裝' : '步'}兵(駐守)`, color: '#ff0055' });
     } else if (action === 'buySoldier') {
       const isHeavy = data === 'HEAVY';
       const cfg = isHeavy ? CONFIG.SOLDIER.HEAVY : CONFIG.SOLDIER.BASIC;
       if (p.gold >= cfg.COST) {
         p.gold -= cfg.COST;
+        const spawnX = p.x + (Math.random() * 20 - 10);
+        const spawnY = p.y + (Math.random() * 20 - 10);
+
+        // 🟢 3. 我軍召喚設定對齊 server.js
         p.army.push({
           id: `soldier_${counters.soldierIdCounter++}`,
           ownerId: pid,
           type: data,
-          x: p.x + (Math.random() * 20 - 10),
-          y: p.y + (Math.random() * 20 - 10),
+          x: spawnX, y: spawnY,
+          anchorX: spawnX, anchorY: spawnY,
+          targetId: null, returning: false,
           hp: cfg.HP, maxHp: cfg.HP,
           atk: cfg.ATK, speed: cfg.SPEED,
-          radius: cfg.RADIUS, state: p.armyState || 'GUARD',
+          radius: cfg.RADIUS,
+          state: p.armyState || 'GUARD',
           attackCooldownSec: 0
         });
       }
@@ -472,7 +528,16 @@
       if (p.armyState === 'GUARD') p.armyState = 'HOLD';
       else if (p.armyState === 'HOLD') p.armyState = 'FREE';
       else p.armyState = 'GUARD';
-      p.army.forEach(s => s.state = p.armyState);
+
+      p.army.forEach(s => {
+        s.state = p.armyState;
+        s.targetId = null;
+        if (s.state === 'HOLD') {
+          s.anchorX = s.x; s.anchorY = s.y;
+        } else if (s.state === 'GUARD') {
+          s.returning = true;
+        }
+      });
     }
   }
 
@@ -594,6 +659,7 @@
       }
     }
 
+    // 紫晶怪物 AI 邏輯
     sandboxState.monsters.forEach((m) => {
       let targetCore = (p && p.core && p.core.hp > 0) ? p.core : null;
       if (!targetCore) return;
@@ -636,11 +702,12 @@
       } else {
         if (m.attackCooldownSec <= 0) {
           applyDamage(activeTarget, m.atk, null);
-          m.attackCooldownSec = CONFIG.MONSTER.COOLDOWN_SEC;
+          m.attackCooldownSec = 0.8;
         }
       }
     });
 
+    // 防禦塔 AI 邏輯
     sandboxState.towers.forEach(t => {
       if (t.cooldownSec > 0) t.cooldownSec -= dt;
 
@@ -654,62 +721,201 @@
       }
     });
 
-    if (p && !p.isDead) {
-      const attackables = getAttackablesFor(pid);
+    // 🟢 2. 部隊 AI 邏輯（完全對齊 combatManager.js 算式）
+    Object.values(sandboxState.players).forEach(player => {
+      if (player.isDead || player.isDummy) return;
 
-      p.army.forEach(s => {
+      player.army.sort((a, b) => (a.type === 'HEAVY' ? 0 : 1) - (b.type === 'HEAVY' ? 0 : 1));
+      const attackables = getAttackablesFor(player.id);
+      const guardArmy = player.army.filter(s => s.state === 'GUARD' || !s.state);
+
+      // 環形軌道分排計算
+      const rings = [];
+      let currentRingUnits = [];
+      let currentCapacity = 6;
+      guardArmy.forEach(s => {
+        currentRingUnits.push(s);
+        if (currentRingUnits.length >= currentCapacity) {
+          rings.push(currentRingUnits);
+          currentRingUnits = [];
+          currentCapacity = Math.floor(currentCapacity * 1.8);
+        }
+      });
+      if (currentRingUnits.length > 0) rings.push(currentRingUnits);
+
+      let ringRadius = 32;
+      rings.forEach((ringUnits, ringIdx) => {
+        const countInThisRing = ringUnits.length;
+        const dir = (ringIdx % 2 === 0) ? 1 : -1;
+        const ringAngleOffset = (sandboxState.globalTimer * 60 + sandboxState.tickCount) * dt * 0.6 * dir;
+
+        ringUnits.forEach((s, slotIdx) => {
+          if (!s.attackCooldownSec) s.attackCooldownSec = 0;
+          if (s.attackCooldownSec > 0) s.attackCooldownSec -= dt;
+
+          const angle = ringAngleOffset + (slotIdx * (Math.PI * 2 / countInThisRing));
+          const orbitX = player.x + Math.cos(angle) * ringRadius;
+          const orbitY = player.y + Math.sin(angle) * ringRadius;
+          const distToOrbit = Math.hypot(orbitX - s.x, orbitY - s.y);
+
+          if (s.returning) {
+            if (distToOrbit < 15) {
+              s.returning = false;
+            }
+          }
+
+          if (distToOrbit > 250) {
+            s.targetId = null;
+            s.returning = true;
+          }
+
+          let target = null;
+          if (!s.returning) {
+            const inRange = attackables.filter(c => Math.hypot(c.x - s.x, c.y - s.y) <= 150);
+            if (inRange.length > 0) {
+              target = inRange.find(c => c.id === s.targetId) || inRange[0];
+              s.targetId = target.id;
+            } else {
+              s.targetId = null;
+            }
+          }
+
+          if (target && !s.returning) {
+            const dToTarget = Math.hypot(target.x - s.x, target.y - s.y);
+            if (dToTarget > 20) {
+              s.x += ((target.x - s.x) / dToTarget) * s.speed * dt;
+              s.y += ((target.y - s.y) / dToTarget) * s.speed * dt;
+            } else {
+              if (s.attackCooldownSec <= 0) {
+                applyDamage(target, s.atk * 1.6, player.id);
+                s.attackCooldownSec = 0.8;
+              }
+            }
+
+            if (target.ref.hp <= 0) {
+              s.targetId = null;
+              if (distToOrbit > 15) {
+                s.returning = true;
+              }
+            }
+          } else {
+            s.targetId = null;
+            if (distToOrbit > 0.5) {
+              const catchUpFactor = 1.1 + Math.min(0.25, (distToOrbit / 300) * 0.25);
+              const maxSpeed = s.speed * catchUpFactor;
+              const step = Math.min(distToOrbit, maxSpeed * dt);
+              s.x += ((orbitX - s.x) / distToOrbit) * step;
+              s.y += ((orbitY - s.y) / distToOrbit) * step;
+            }
+          }
+        });
+        ringRadius += 22;
+      });
+
+      // FREE 自由尋路模式
+      player.army.filter(s => s.state === 'FREE').forEach(s => {
         if (!s.attackCooldownSec) s.attackCooldownSec = 0;
         if (s.attackCooldownSec > 0) s.attackCooldownSec -= dt;
+
+        let closestTarget = null;
+        let minDistance = Infinity;
+
+        attackables.forEach(c => {
+          const d = Math.hypot(c.x - s.x, c.y - s.y);
+          if (d < minDistance) {
+            minDistance = d;
+            closestTarget = c;
+          }
+        });
+
+        let activeTarget = null;
+        if (s.targetId) {
+          const currentTarget = attackables.find(c => c.id === s.targetId);
+          if (currentTarget) {
+            const currentDist = Math.hypot(currentTarget.x - s.x, currentTarget.y - s.y);
+            if (closestTarget && closestTarget.id !== s.targetId && (currentDist - minDistance >= 40)) {
+              activeTarget = closestTarget;
+              s.targetId = closestTarget.id;
+            } else {
+              activeTarget = currentTarget;
+              minDistance = currentDist;
+            }
+          } else {
+            activeTarget = closestTarget;
+            s.targetId = closestTarget ? closestTarget.id : null;
+          }
+        } else {
+          activeTarget = closestTarget;
+          s.targetId = closestTarget ? closestTarget.id : null;
+        }
+
+        if (activeTarget) {
+          if (minDistance > 20) {
+            s.x += ((activeTarget.x - s.x) / minDistance) * s.speed * dt;
+            s.y += ((activeTarget.y - s.y) / minDistance) * s.speed * dt;
+          } else {
+            if (s.attackCooldownSec <= 0) {
+              applyDamage(activeTarget, s.atk * 1.6, player.id);
+              s.attackCooldownSec = 0.8;
+            }
+          }
+        }
+      });
+
+      // HOLD 駐守防禦模式
+      player.army.filter(s => s.state === 'HOLD').forEach(s => {
+        if (!s.attackCooldownSec) s.attackCooldownSec = 0;
+        if (s.attackCooldownSec > 0) s.attackCooldownSec -= dt;
+
+        const anchorX = s.anchorX || s.x;
+        const anchorY = s.anchorY || s.y;
 
         let target = null;
-        const inRange = attackables.filter(c => Math.hypot(c.x - s.x, c.y - s.y) <= 180);
-        if (inRange.length > 0) target = inRange[0];
+        let minDist = Infinity;
+        attackables.forEach(c => {
+          const dFromAnchor = Math.hypot(c.x - anchorX, c.y - anchorY);
+          const dFromSoldier = Math.hypot(c.x - s.x, c.y - s.y);
+          if (dFromAnchor <= 180 && dFromSoldier < minDist) {
+            minDist = dFromSoldier;
+            target = c;
+          }
+        });
 
         if (target) {
-          const dToTarget = Math.hypot(target.x - s.x, target.y - s.y);
-          if (dToTarget > 20) {
-            s.x += ((target.x - s.x) / dToTarget) * s.speed * dt;
-            s.y += ((target.y - s.y) / dToTarget) * s.speed * dt;
+          s.targetId = target.id;
+          if (minDist > 20) {
+            s.x += ((target.x - s.x) / minDist) * s.speed * dt;
+            s.y += ((target.y - s.y) / minDist) * s.speed * dt;
           } else {
             if (s.attackCooldownSec <= 0) {
-              applyDamage(target, s.atk * 1.6, pid);
+              applyDamage(target, s.atk * 1.6, player.id);
               s.attackCooldownSec = 0.8;
             }
           }
+        } else {
+          s.targetId = null;
+          const dx = anchorX - s.x;
+          const dy = anchorY - s.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 0.5) {
+            const moveSpeed = Math.min(dist * 6.0, s.speed);
+            const step = Math.min(dist, moveSpeed * dt);
+            s.x += (dx / dist) * step;
+            s.y += (dy / dist) * step;
+          }
         }
       });
-    }
+    });
 
+    // 物理碰撞推擠
     const enemyAI = sandboxState.players['enemy_ai'];
-    if (enemyAI && enemyAI.army) {
-      const enemyAttackables = getAttackablesFor('enemy_ai');
-      enemyAI.army.forEach(s => {
-        if (!s.attackCooldownSec) s.attackCooldownSec = 0;
-        if (s.attackCooldownSec > 0) s.attackCooldownSec -= dt;
-
-        let target = (enemyAttackables.length > 0) ? enemyAttackables[0] : null;
-        if (target) {
-          const dToTarget = Math.hypot(target.x - s.x, target.y - s.y);
-          if (dToTarget > 20) {
-            s.x += ((target.x - s.x) / dToTarget) * s.speed * dt;
-            s.y += ((target.y - s.y) / dToTarget) * s.speed * dt;
-          } else {
-            if (s.attackCooldownSec <= 0) {
-              applyDamage(target, s.atk * 1.6, 'enemy_ai');
-              s.attackCooldownSec = 0.8;
-            }
-          }
-        }
-      });
-    }
-
     const allPushables = [...sandboxState.neutralSoldiers, ...sandboxState.monsters];
     if (p && !p.isDead) allPushables.push(...p.army);
     if (enemyAI && enemyAI.army) allPushables.push(...enemyAI.army);
 
     allPushables.forEach(s => {
       s.x = Math.max(bounds.minX + 10, Math.min(bounds.maxX - 10, s.x));
-      s.y = Math.max(bounds.minY + 10, Math.min(bounds.maxX - 10, s.y));
+      s.y = Math.max(bounds.minY + 10, Math.min(bounds.maxY - 10, s.y));
     });
 
     for (let i = 0; i < allPushables.length; i++) {
@@ -759,12 +965,15 @@
   window.sandboxAddGold = sandboxAddGold;
   window.sandboxAddLevel = sandboxAddLevel;
   window.sandboxMaxLevel = sandboxMaxLevel;
+  window.sandboxToggleGodMode = sandboxToggleGodMode;
   window.sandboxSpawnMonster = sandboxSpawnMonster;
   window.sandboxBuildEnemyTower = sandboxBuildEnemyTower;
   window.sandboxSpawnEnemySoldier = sandboxSpawnEnemySoldier;
   window.sandboxHealAllUnits = sandboxHealAllUnits;
   window.sandboxClearEnemies = sandboxClearEnemies;
   window.sandboxClearTowers = sandboxClearTowers;
+  window.sandboxClearAllSoldiers = sandboxClearAllSoldiers;
+  window.sandboxResetCore = sandboxResetCore;
   window.sandboxResetExp = sandboxResetExp;
   window.sandboxResetGold = sandboxResetGold;
 })();

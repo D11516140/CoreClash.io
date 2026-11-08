@@ -1,6 +1,5 @@
 // 🎨 public/js/render.js - 畫面渲染與繪圖核心模組
 
-// 🟢 補上全域特效陣列宣告 (解決 particles is not defined 報錯)
 let particles = [];
 let floatingTexts = [];
 window.particles = particles;
@@ -32,7 +31,6 @@ function getHpBarAlpha(entity, currentTick) {
   return 0.0;
 }
 
-// 🟢 單位受擊紅光閃爍 (Hit Flash: 10 幀內 55% 透明度紅外發光)
 function drawHitFlash(pos, radius, currentTick, lastHitTick) {
   if (!lastHitTick) return;
   const diff = currentTick - lastHitTick;
@@ -181,7 +179,6 @@ function drawGameScene(state) {
   const bounds = state.mapBounds || { minX: 0, maxX: 1600, minY: 0, maxY: 1200, width: 1600, height: 1200, buffer: 600 };
   const currentTick = state.tickCount || 0;
   
-  // 🟢 全域玩家解析 (自動相容 PVP 與沙盒模式)
   const me = typeof getCurrentPlayer === 'function' ? getCurrentPlayer(state) : (state.players[window.myPlayerId] || Object.values(state.players)[0]);
   const myId = me ? me.id : (typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId);
 
@@ -259,6 +256,7 @@ function drawGameScene(state) {
   const enemyGroundUnits = [];
 
   Object.values(state.players).forEach(p => {
+    if (p.isDummy) return;
     const isSelf = p.id === myId || (me && me.allianceId && p.allianceId === me.allianceId);
     if (p.core && p.core.hp > 0) {
       (isSelf ? selfGroundUnits : enemyGroundUnits).push({ x: p.core.x, y: p.core.y, r: 85 });
@@ -361,7 +359,7 @@ function drawGameScene(state) {
     p.army.forEach(s => {
       const pos = worldToScreen(s.x, s.y);
       const isHeavy = s.type === 'HEAVY';
-      const typeColor = isHeavy ? '#4f46e5' : '#38bdf8';
+      const typeColor = (p.id === 'enemy_ai' || p.isDummy) ? '#ff0055' : (isHeavy ? '#4f46e5' : '#38bdf8');
       const radius = s.radius || 5;
 
       drawHitFlash(pos, radius, currentTick, s.lastHitTick);
@@ -394,7 +392,7 @@ function drawGameScene(state) {
   }
 
   Object.values(state.players).forEach(p => {
-    if (p.isDead || !p.isOnline) return;
+    if (p.isDummy || p.id === 'enemy_ai' || p.isDead || !p.isOnline) return;
     const pos = worldToScreen(p.x, p.y);
 
     drawHitFlash(pos, 12, currentTick, p.lastHitTick);
@@ -495,6 +493,51 @@ function drawGameScene(state) {
 
       ctx.fillText(promptMsg, mouseScreenPos.x, mouseScreenPos.y - 25);
     }
+
+    // 🟢 4. 敵方防禦塔預覽建造模式 (加入合法度判定，綠框/紅框)
+    const isPlacingEnemyTower = (buildMode === 'ENEMY_TOWER_BASIC' || buildMode === 'ENEMY_TOWER_ADVANCED');
+    if (isPlacingEnemyTower) {
+      const isAdv = buildMode === 'ENEMY_TOWER_ADVANCED';
+      const range = isAdv ? 260 : 160;
+
+      const isOutBounds = gridX < bounds.minX + 20 || gridX > bounds.maxX - 20 || gridY < bounds.minY + 20 || gridY > bounds.maxY - 20;
+      const isOccupied = state.towers.some(t => t.x === gridX && t.y === gridY) ||
+                         Object.values(state.players).some(p => p.core && Math.hypot(p.core.x - gridX, p.core.y - gridY) < 30);
+      const isValid = !isOutBounds && !isOccupied;
+
+      const previewFill = isValid ? 'rgba(0, 255, 102, 0.25)' : 'rgba(255, 0, 85, 0.25)';
+      const strokeColor = isValid ? '#00ff66' : '#ff0055';
+
+      ctx.strokeStyle = strokeColor;
+      ctx.fillStyle = previewFill;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(gridScreen.x, gridScreen.y, range, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+      ctx.fillRect(gridScreen.x - 13, gridScreen.y - 13, 26, 26);
+      ctx.strokeRect(gridScreen.x - 13, gridScreen.y - 13, 26, 26);
+
+      ctx.font = 'bold 13px Segoe UI'; ctx.fillStyle = strokeColor; ctx.textAlign = 'center';
+      let promptMsg = `左鍵放置敵方${isAdv ? '重砲塔' : '基礎塔'} | 右鍵 / [~] 取消`;
+      if (isOutBounds) promptMsg = '🚫 超出地圖邊界';
+      else if (isOccupied) promptMsg = '⚠️ 該位置已被其他建築/核心佔據';
+
+      ctx.fillText(promptMsg, mouseScreenPos.x, mouseScreenPos.y - 25);
+    }
+
+    const isPlacingEnemySoldier = (buildMode === 'ENEMY_SOLDIER_BASIC' || buildMode === 'ENEMY_SOLDIER_HEAVY');
+    if (isPlacingEnemySoldier) {
+      const isHeavy = buildMode === 'ENEMY_SOLDIER_HEAVY';
+      const radius = isHeavy ? 8 : 5;
+      const mouseWorldScreen = worldToScreen(mousePos.x, mousePos.y);
+
+      ctx.strokeStyle = '#ff0055';
+      ctx.fillStyle = 'rgba(255, 0, 85, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(mouseWorldScreen.x, mouseWorldScreen.y, radius + 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+      ctx.font = 'bold 13px Segoe UI'; ctx.fillStyle = '#ff0055'; ctx.textAlign = 'center';
+      ctx.fillText(`左鍵放置敵方${isHeavy ? '重裝兵' : '步兵'} (駐守) | 右鍵 / [~] 取消`, mouseScreenPos.x, mouseScreenPos.y - 25);
+    }
   }
 
   if (buildMode === null) {
@@ -506,7 +549,7 @@ function drawGameScene(state) {
 
       if (activeEntity.type === 'COMMANDER') {
         const targetP = state.players[activeEntity.id];
-        if (targetP) {
+        if (targetP && !targetP.isDummy) {
           const isSelf = targetP.id === myId;
           const meAlliance = me ? state.alliances[me.allianceId] : null;
           const meIsLeader = meAlliance && (meAlliance.leaderId === me.id);
