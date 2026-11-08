@@ -14,8 +14,8 @@
    - 僅記錄已實際編寫、重構或明確確定邏輯的檔案與功能。未經討論或未載入的檔案不隨意捏造功能說明。
 
 4. **DOM 與繪圖效能守則 (Performance & Rendering Rules)**
-   - **HTML 比對快取 (HTML Diffing)**：前端 HUD 與排行榜等高頻呼叫的 DOM 更新，必須先比對生成字串是否改變（`lastLbHTMLCache`），禁止每一幀盲目覆寫 `innerHTML`。
-   - **選單狀態快取 (`lastUIStateCache`)**：底部控制按鈕的 class 與 display 變動必須進行狀態 Key 比對，避免邊移動邊開預建築時造成 DOM 重排（Reflow）卡頓。
+   - **Canvas 矩形與 DOM 節點快取 (`cachedCanvasRect` / `uiElements`)**：快取 `canvas.getBoundingClientRect()` 於 `resize`/`scroll` 事件，禁止高頻 `mousemove` 觸發 DOM 重新排版 (Forced Reflow)；全域快取 HUD DOM 節點，消除重複 `getElementById` 開銷。
+   - **事件佇列與 DOM 比對 (`e.repeat` / HTML Diffing)**：過濾 OS 鍵盤長按自動重複封包防止事件佇列塞車；HUD 與排行榜變更需進行字串與狀態 Key 比對（`lastLbHTMLCache`, `lastUIStateCache`），無變動跳過 DOM 重刷。
 
 5. **戰鬥與物理計算守則 (Combat & Physics Rules)**
    - **冷卻制傷害**：單位與怪物的戰鬥統一採用冷卻時間（如 0.8s 週期），避免每 Tick 產生微小連續傷害，以維護伺服器運算效能並提供明確打擊感。
@@ -30,9 +30,9 @@ CoreClash.io/
 │   ├── css/
 │   │   └── style.css          # UI 賽博風格樣式與動態 modal 佈局
 │   ├── js/
-│   │   ├── game.js            # 前端通訊與主控台 (🟢 圖層點擊順序校正、Socket 事件傳輸)
+│   │   ├── game.js            # 前端通訊與主控台 (🟢 DOM矩形快取、e.repeat防爆、rAF純繪圖迴圈、圖層順序)
 │   │   ├── render.js          # Canvas 繪圖核心 (🟢 0.8s 受擊紅光閃爍、傷害飄字、預建築精準提示)
-│   │   └── ui.js              # 介面與彈窗模組 (🟢 排行榜 HTML Diffing 快取、UI 狀態快取、4段移速變色)
+│   │   └── ui.js              # 介面與彈窗模组 (🟢 UI/HUD 雙重狀態快取、DOM 節點快取、4段移速變色)
 │   └── index.html             # 主頁面 DOM 結構與 Modal 容器
 ├── server/                    # 伺服器端核心邏輯
 │   ├── config.js              # 常數配置 (🟢 初級/重裝兵負重 1/2、怪物半徑、動態懸賞與分數權重)
@@ -45,12 +45,15 @@ CoreClash.io/
 
 ## ⚙️ 三、 模組實作與戰術細節紀錄
 
-### 1. DOM 與效能優化 (Performance Caching)
-* **排行榜 HTML 比對 (`lastLbHTMLCache`)**：
-  * 排行榜僅在伺服器算分（每 20 秒）、成員狀態改變、或切換 `[玩家 / 聯盟]` 頁籤時更新 DOM。
-  * 傳送 `gameState` 每一幀比對生成字串，無變化時直接跳過 DOM `innerHTML` 賦值。
-* **按鈕選單狀態快取 (`lastUIStateCache`)**：
-  * 使用 `${isDead}_${hasCore}_${activeMenu}_${buildMode}` 作為 Key，選單狀態未變時跳過 DOM class/style 寫入。
+### 1. DOM 與效能優化 (Performance Caching & Event Loop)
+* **Canvas 矩形快取 (`cachedCanvasRect`)**：
+  * 將 `canvas.getBoundingClientRect()` 快取於全域，僅在 `resize` 與 `scroll` 時重新計算。高頻 `mousemove` 零 DOM 讀取開銷，徹底避免 Forced Reflow。
+* **OS 按鈕自動重複過濾 (`e.repeat`)**：
+  * `keydown` 事件中加入 `if (e.repeat) return;`，丟棄作業系統發出的重複按鍵封包，防止長按 WASD 時塞爆事件佇列導致 `keyup` 延遲發射（解決走直線煞不住車的問題）。
+* **渲染迴圈與 DOM 繪圖解耦 (`renderLoop`)**：
+  * 採用 `requestAnimationFrame` 專職處理 Canvas 畫圖與滑鼠世界座標即時對齊；`updateHUD` DOM 數據寫入僅交由 `socket.on('gameState')` 觸發，實施完全解耦。
+* **DOM 節點與 HTML 狀態雙重快取 (`uiElements` / `lastLbHTMLCache`)**：
+  * 全域快取 UI 節點（`uiElements`）；排行榜僅在 DOM 生成字串改變時覆寫；HUD 與選單按鈕比對 Key 值（`lastUIStateCache`, `lastHudDataCache`），避免每一幀重複刷 DOM。
 
 ### 2. 戰鬥系統與打擊反饋 (Combat Cooldown & Visual FX)
 * **0.8 秒冷卻傷害算式**：
@@ -74,31 +77,31 @@ CoreClash.io/
   * $> 80\%$: 綠色 (`#00ff66`)
   * $51\% \sim 80\%$: 黃色 (`#ffb700`)
   * $21\% \sim 50\%$: 紅色 (`#ff0055`)
-  * $\le 20\%$: 暗紅色 (`#800000`)
+  * $\le 20\%$: 暗紅色 (`#800000`)[cite: 4, 10]
 
 ### 5. 建築與互動機制 (Placement & Interaction)
 * **精準 placement 失敗提示**：
-  * 預建築模式動態即時顯示失敗原因：「💰 金幣不足」、「🚫 超出地圖邊界」、「📡 超出基地核心領地範圍 (350px)」、「⚠️ 該位置已被佔據」。
+  * 預建築模式動態即時顯示失敗原因：「💰 金幣不足」、「🚫 超出地圖邊界」、「📡 超出基地核心領地範圍 (350px)」、「⚠️ 該位置已被佔據」[cite: 4, 10]。
 * **點擊圖層優先順序 (`findEntityAtPos`)**：
-  * `1. 部隊小兵` $\rightarrow$ `2. 指揮官` $\rightarrow$ `3. 怪物` $\rightarrow$ `4. 防禦塔 (精準矩形)` $\rightarrow$ `5. 基地核心`。
+  * `1. 部隊小兵` $\rightarrow$ `2. 指揮官` $\rightarrow$ `3. 怪物` $\rightarrow$ `4. 防禦塔 (精準矩形)` $\rightarrow$ `5. 基地核心`[cite: 4, 10]。
 
 ### 6. 戰術選單與建築殘值 (Buildings & Economy)
 * **殘值安全計算**：
-  * 防禦塔與小兵賣出價格根據殘餘血量比例計算：$\text{退款} = \lfloor \text{最大退款} \times (\text{當前 HP} / \text{最大 HP}) \rfloor$。
-  * 修復 / 治療費用根據缺損血量動態比例扣除金幣。
+  * 防禦塔與小兵賣出價格根據殘餘血量比例計算：$\text{退款} = \lfloor \text{最大退款} \times (\text{當前 HP} / \text{最大 HP}) \rfloor$[cite: 4, 10]。
+  * 修復 / 治療費用根據缺損血量動態比例扣除金幣[cite: 4, 10]。
 
 ---
 
 ## 📡 四、 伺服器通訊協定與資料結構 (Socket & State Schema)
 
 ### 1. 核心 `gameState` 物件結構
-* `tickCount`: 伺服器 60FPS 累計 Tick 數。
-* `players`: `{ [playerId]: { id, name, gold, hp, maxHp, x, y, speedRatio, armyState, allianceId, core: {...}, army: [...] } }`
-* `towers`: `[ { id, ownerId, type, x, y, hp, maxHp, range, atk, cooldownSec } ]`
-* `monsters`: `[ { id, targetPlayerId, x, y, hp, maxHp, atk, speed, isRaid } ]`
-* `neutralSoldiers`: `[ { id, x, y, hp, maxHp, atk, speed, type } ]`
-* `lasers`: `[ { x1, y1, x2, y2, color } ]`
-* `events`: `[ { type: 'EXPLOSION' | 'FLOAT_TEXT', x, y, color, text } ]`
+* `tickCount`: 伺服器 60FPS 累計 Tick 數[cite: 4, 10]。
+* `players`: `{ [playerId]: { id, name, gold, hp, maxHp, x, y, speedRatio, armyState, allianceId, core: {...}, army: [...] } }`[cite: 4, 10]
+* `towers`: `[ { id, ownerId, type, x, y, hp, maxHp, range, atk, cooldownSec } ]`[cite: 4, 10]
+* `monsters`: `[ { id, targetPlayerId, x, y, hp, maxHp, atk, speed, isRaid } ]`[cite: 4, 10]
+* `neutralSoldiers`: `[ { id, x, y, hp, maxHp, atk, speed, type } ]`[cite: 4, 10]
+* `lasers`: `[ { x1, y1, x2, y2, color } ]`[cite: 4, 10]
+* `events`: `[ { type: 'EXPLOSION' | 'FLOAT_TEXT', x, y, color, text } ]`[cite: 4, 10]
 
 ### 2. 關鍵 Socket 指令對照表
 | Socket 事件名稱 | 觸發來源 | 帶入參數 (Payload) | 說明 |

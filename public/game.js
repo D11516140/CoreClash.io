@@ -99,7 +99,6 @@ function exitSubMenu() {
   updateUI();
 }
 
-// 🟢 1. mousemove 僅紀錄純螢幕座標 (0% CPU/DOM 開銷)
 canvas.addEventListener('mousemove', (e) => {
   rawClientX = e.clientX;
   rawClientY = e.clientY;
@@ -169,38 +168,62 @@ function findEntityById(id, type) {
   return null;
 }
 
+// 🟢 點擊判定圖層順序 (1. 部隊小兵 -> 2. 指揮官 -> 3. 怪物 -> 4. 防禦塔(矩形) -> 5. 基地核心)[cite: 4]
 function findEntityAtPos(wx, wy) {
   if (!lastGameState) return null;
-  for (const t of lastGameState.towers) {
-    if (Math.abs(wx - t.x) <= 13 && Math.abs(wy - t.y) <= 13) return { type: 'TOWER', id: t.id, obj: t, x: t.x, y: t.y };
-  }
+
+  // 1. 部隊小兵
   for (const p of Object.values(lastGameState.players)) {
-    if (!p.isDead && Math.hypot(wx - p.x, wy - p.y) <= 12) return { type: 'COMMANDER', id: p.id, obj: p, x: p.x, y: p.y };
     for (const s of p.army) {
-      if (Math.hypot(wx - s.x, wy - s.y) <= (s.radius || 5) + 3) return { type: 'SOLDIER', id: s.id, obj: s, ownerId: p.id, x: s.x, y: s.y };
+      if (Math.hypot(wx - s.x, wy - s.y) <= (s.radius || 5) + 4) {
+        return { type: 'SOLDIER', id: s.id, obj: s, ownerId: p.id, x: s.x, y: s.y };
+      }
     }
   }
   if (lastGameState.neutralSoldiers) {
     for (const ns of lastGameState.neutralSoldiers) {
-      if (Math.hypot(wx - ns.x, wy - ns.y) <= (ns.radius || 5) + 3) return { type: 'SOLDIER', id: ns.id, obj: ns, x: ns.x, y: ns.y };
+      if (Math.hypot(wx - ns.x, wy - ns.y) <= (ns.radius || 5) + 4) {
+        return { type: 'SOLDIER', id: ns.id, obj: ns, x: ns.x, y: ns.y };
+      }
     }
   }
+
+  // 2. 指揮官
+  for (const p of Object.values(lastGameState.players)) {
+    if (!p.isDead && Math.hypot(wx - p.x, wy - p.y) <= 14) {
+      return { type: 'COMMANDER', id: p.id, obj: p, x: p.x, y: p.y };
+    }
+  }
+
+  // 3. 怪物
+  if (lastGameState.monsters) {
+    for (const m of lastGameState.monsters) {
+      const mRadius = m.isRaid ? 10 : 8;
+      if (Math.hypot(wx - m.x, wy - m.y) <= mRadius + 3) {
+        return { type: 'MONSTER', id: m.id, obj: m, x: m.x, y: m.y };
+      }
+    }
+  }
+
+  // 4. 防禦塔 (精準矩形範圍 14px)
+  for (const t of lastGameState.towers) {
+    if (Math.abs(wx - t.x) <= 14 && Math.abs(wy - t.y) <= 14) {
+      return { type: 'TOWER', id: t.id, obj: t, x: t.x, y: t.y };
+    }
+  }
+
+  // 5. 基地核心
   for (const p of Object.values(lastGameState.players)) {
     if (p.core && p.core.hp > 0 && Math.abs(wx - p.core.x) <= 18 && Math.abs(wy - p.core.y) <= 18) {
       return { type: 'CORE', id: p.core.id, obj: p.core, x: p.core.x, y: p.core.y };
     }
   }
-  if (lastGameState.monsters) {
-    for (const m of lastGameState.monsters) {
-      if (Math.hypot(wx - m.x, wy - m.y) <= 12) return { type: 'MONSTER', id: m.id, obj: m, x: m.x, y: m.y };
-    }
-  }
+
   return null;
 }
 
-// 🟢 2. 過濾 OS 長按按鈕自動重複 (e.repeat)，防止走直線時塞爆事件佇列
 window.addEventListener('keydown', (e) => {
-  if (e.repeat) return; // 關鍵修復：忽略 Windows 自動重複 keydown 封包
+  if (e.repeat) return; // 過濾 OS 長按 keydown 封包
 
   if (e.code === 'Tab') { e.preventDefault(); showDetailedInfo = !showDetailedInfo; return; }
   if (e.code === 'KeyW') keys.w = true;
@@ -221,7 +244,6 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'KeyD') keys.d = false;
 });
 
-// 視窗失去焦點時自動清空按鍵，避免停不下來
 window.addEventListener('blur', () => {
   keys.w = false; keys.a = false; keys.s = false; keys.d = false;
 });
@@ -245,7 +267,6 @@ function returnToLobby() {
   socket.emit('returnToLobby');
 }
 
-// 🟢 3. 網路封包處理：僅更新資料與執行 HUD 變更（不混在 rAF 內）
 socket.on('gameState', (state) => {
   lastGameState = state;
 
@@ -263,7 +284,6 @@ socket.on('gameState', (state) => {
   updateHUD(state);
 });
 
-// 🟢 4. 純 Canvas 獨立繪圖迴圈 (零 DOM 操作，與顯示器 60/144/240Hz 完美同步)
 function renderLoop() {
   if (lastGameState) {
     const state = lastGameState;

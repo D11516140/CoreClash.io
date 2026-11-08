@@ -25,7 +25,6 @@ function closeCustomConfirm() {
   if (modal) modal.style.display = 'none';
 }
 
-// 🏆 排行榜頁籤切換狀態 (PLAYER | ALLIANCE)
 let currentLeaderboardTab = 'PLAYER';
 
 function switchLbTab(tab) {
@@ -41,7 +40,6 @@ function switchLbTab(tab) {
   }
 }
 
-// 🤝 聯盟 / 組隊系統 UI 操控
 function createAllianceFromUI() {
   const input = document.getElementById('alliance-name-input');
   const name = input ? input.value : '';
@@ -113,7 +111,6 @@ function inspectPlayer(targetId) {
   }
 }
 
-// ⚙️ 聯盟設定 Modal 邏輯
 function openSettingsModal() {
   const me = lastGameState ? lastGameState.players[myPlayerId] : null;
   if (!me || !me.allianceId || !lastGameState.alliances[me.allianceId]) return;
@@ -216,7 +213,7 @@ function closeMembersModal() {
   if (modal) modal.style.display = 'none';
 }
 
-// 🟢 DOM 節點快取 (避免高頻 getElementById 搜尋)
+// 🟢 DOM 節點快取存取器
 const uiElements = {
   btnBack: null, btnCore: null, btn1: null, btn2: null, btnF: null,
   lblE: null, lbl1: null, lbl2: null,
@@ -328,6 +325,7 @@ function updateHUD(state) {
   if (!uiElements.uiGold) initUIElementsCache();
   const playersArr = Object.values(state.players);
 
+  // 1. 排行榜 HTML Diffing
   if (uiElements.lbList) {
     let newLbHTML = '';
 
@@ -396,6 +394,7 @@ function updateHUD(state) {
     }
   }
 
+  // 🟢 2. HUD 數據與 4 段移速變色 (80%+ 綠 / 51-80% 黃 / 21-50% 紅 / <=20% 暗紅)[cite: 4]
   if (me) {
     const totalWeight = me.army.reduce((acc, s) => acc + (s.type === 'HEAVY' ? 2 : 1), 0);
     const coreHp = me.core ? Math.ceil(me.core.hp) : -1;
@@ -424,7 +423,7 @@ function updateHUD(state) {
         if (pct > 80) uiElements.uiMoveSpeed.style.color = '#00ff66';
         else if (pct >= 51) uiElements.uiMoveSpeed.style.color = '#ffb700';
         else if (pct >= 21) uiElements.uiMoveSpeed.style.color = '#ff0055';
-        else uiElements.uiMoveSpeed.style.color = '#800000';
+        else uiElements.uiMoveSpeed.style.color = '#800000'; // 暗紅
       }
 
       if (uiElements.uiArmyMode) {

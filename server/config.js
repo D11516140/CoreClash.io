@@ -8,8 +8,8 @@ const CONFIG = {
     REGEN_HP: 8,
     OUT_OF_COMBAT_SEC: 5.0,
     RESPAWN_SEC: 10.0,
-    SLOWDOWN_TARGET_WEIGHT: 70, // 負重達 70 時達最低速度
-    MIN_SPEED_RATIO: 0.4        // 最低速度保底 40%
+    SLOWDOWN_TARGET_WEIGHT: 70, // 負重達 70 時達最低速度[cite: 5]
+    MIN_SPEED_RATIO: 0.4        // 最低速度保底 40%[cite: 5]
   },
 
   CORE: {
@@ -27,15 +27,18 @@ const CONFIG = {
   },
 
   SOLDIER: {
-    BASIC: { HP: 100, ATK: 15, SPEED: 228, RADIUS: 5, COST: 50, REFUND: 35, HEAL_MAX_COST: 15, WEIGHT: 1 },
-    HEAVY: { HP: 280, ATK: 35, SPEED: 150, RADIUS: 8, COST: 120, REFUND: 84, HEAL_MAX_COST: 40, WEIGHT: 2 }
+    BASIC: { HP: 100, ATK: 15, SPEED: 228, RADIUS: 5, COST: 50, REFUND: 35, HEAL_MAX_COST: 15, WEIGHT: 1, COOLDOWN_SEC: 0.8 },
+    HEAVY: { HP: 280, ATK: 35, SPEED: 150, RADIUS: 8, COST: 120, REFUND: 84, HEAL_MAX_COST: 40, WEIGHT: 2, COOLDOWN_SEC: 0.8 }
   },
 
   MONSTER: {
     BASE_HP: 40,
     BASE_ATK: 8,
     SPEED: 108,
-    BOUNTY: 25
+    RADIUS: 8,       // 普通怪半徑[cite: 4]
+    RAID_RADIUS: 10, // 突襲精英怪半徑[cite: 4]
+    BOUNTY: 25,
+    COOLDOWN_SEC: 0.8 // 戰鬥攻擊週期 0.8s[cite: 4]
   },
 
   BOUNTIES: {

@@ -154,6 +154,19 @@ function applyDamage(gameState, target, damage, attackerOwnerId) {
   target.ref.lastHitTick = gameState.tickCount;
   target.ref.lastFullHpTick = null;
 
+  const isMonster = target.type === 'MONSTER';
+  const floatColor = isMonster ? '#a855f7' : '#ff0055';
+  const roundedDmg = Math.ceil(damage);
+  if (roundedDmg > 0) {
+    gameState.events.push({
+      type: 'FLOAT_TEXT',
+      x: target.x,
+      y: target.y - 12,
+      text: `-${roundedDmg}`,
+      color: floatColor
+    });
+  }
+
   const attackerP = gameState.players[attackerOwnerId];
 
   if (target.type === 'COMMANDER') {
@@ -201,6 +214,14 @@ function applyDamage(gameState, target, damage, attackerOwnerId) {
         owner.survivalTime = 0;
         owner.score = 0;
         convertArmyToNeutral(gameState, owner);
+
+        // 🟢 修正 1：核心爆破時，引爆並移除該玩家的所有防禦塔
+        gameState.towers.forEach(t => {
+          if (t.ownerId === owner.id) {
+            gameState.events.push({ type: 'EXPLOSION', x: t.x, y: t.y, color: '#ff0055', count: 12 });
+          }
+        });
+        gameState.towers = gameState.towers.filter(t => t.ownerId !== owner.id);
 
         if (attackerP) {
           const dynamicBounty = Math.min(
@@ -283,7 +304,6 @@ function updateGameTick(gameState, counters, io) {
       const deltaX = p.x - oldX;
       const deltaY = p.y - oldY;
 
-      // 護衛部隊 Lockstep 鎖步平移（距離玩家 180px 內生效）
       if (deltaX !== 0 || deltaY !== 0) {
         p.army.forEach(s => {
           if ((s.state === 'GUARD' || !s.state) && !s.targetId) {
@@ -354,8 +374,11 @@ function updateGameTick(gameState, counters, io) {
             x: pos.x, y: pos.y,
             hp: Math.floor(CONFIG.MONSTER.BASE_HP * diffMultiplier),
             maxHp: Math.floor(CONFIG.MONSTER.BASE_HP * diffMultiplier),
-            atk: Math.floor(CONFIG.MONSTER.BASE_ATK * diffMultiplier),
+            // 🟢 修正 2：怪物攻擊力固定為基礎 8 點（不隨時間膨脹）
+            atk: CONFIG.MONSTER.BASE_ATK,
             speed: CONFIG.MONSTER.SPEED,
+            radius: CONFIG.MONSTER.RADIUS,
+            attackCooldownSec: 0,
             isRaid: false
           });
         }
@@ -382,8 +405,10 @@ function updateGameTick(gameState, counters, io) {
               x: pos.x, y: pos.y,
               hp: Math.floor(CONFIG.MONSTER.BASE_HP * diffMultiplier * 1.2),
               maxHp: Math.floor(CONFIG.MONSTER.BASE_HP * diffMultiplier * 1.2),
-              atk: Math.floor(CONFIG.MONSTER.BASE_ATK * diffMultiplier),
+              atk: CONFIG.MONSTER.BASE_ATK,
               speed: CONFIG.MONSTER.SPEED * 1.15,
+              radius: CONFIG.MONSTER.RAID_RADIUS,
+              attackCooldownSec: 0,
               isRaid: true
             });
           }
@@ -409,6 +434,7 @@ function updateGameTick(gameState, counters, io) {
     });
   }
 
+  // 怪物 AI 與卡位切換仇恨
   gameState.monsters.forEach((m) => {
     let targetCore = null;
     const assignedPlayer = gameState.players[m.targetPlayerId];
@@ -418,13 +444,15 @@ function updateGameTick(gameState, counters, io) {
     }
 
     if (!targetCore) return;
+    if (m.attackCooldownSec > 0) m.attackCooldownSec -= dt;
 
     let blocker = null;
     let minBlockerDist = 90;
+    const mRadius = m.radius || 8;
 
     gameState.towers.forEach(t => {
       const d = Math.hypot(t.x - m.x, t.y - m.y);
-      if (d < minBlockerDist) {
+      if (d < (mRadius + 14 + 5) && d < minBlockerDist) {
         minBlockerDist = d;
         blocker = { type: 'TOWER', id: t.id, ref: t, x: t.x, y: t.y };
       }
@@ -433,14 +461,14 @@ function updateGameTick(gameState, counters, io) {
     Object.values(gameState.players).forEach(p => {
       if (p.isOnline && !p.isDead) {
         const d = Math.hypot(p.x - m.x, p.y - m.y);
-        if (d < minBlockerDist) {
+        if (d < (mRadius + 12 + 5) && d < minBlockerDist) {
           minBlockerDist = d;
           blocker = { type: 'COMMANDER', id: p.id, ref: p, x: p.x, y: p.y };
         }
       }
       p.army.forEach(s => {
         const d = Math.hypot(s.x - m.x, s.y - m.y);
-        if (d < minBlockerDist) {
+        if (d < (mRadius + (s.radius || 5) + 5) && d < minBlockerDist) {
           minBlockerDist = d;
           blocker = { type: 'SOLDIER', id: s.id, ref: s, x: s.x, y: s.y };
         }
@@ -454,7 +482,11 @@ function updateGameTick(gameState, counters, io) {
       m.x += ((activeTarget.x - m.x) / distToTarget) * m.speed * dt;
       m.y += ((activeTarget.y - m.y) / distToTarget) * m.speed * dt;
     } else {
-      applyDamage(gameState, activeTarget, m.atk * dt, null);
+      // 🟢 修正 2：怪物單次打擊直接造成 m.atk 傷害（面板寫 8 實際就扣 8）
+      if (m.attackCooldownSec <= 0) {
+        applyDamage(gameState, activeTarget, m.atk, null);
+        m.attackCooldownSec = 0.8;
+      }
     }
   });
 
@@ -504,19 +536,20 @@ function updateGameTick(gameState, counters, io) {
       const ringAngleOffset = (tickCount * dt) * 0.6 * dir;
 
       ringUnits.forEach((s, slotIdx) => {
+        if (!s.attackCooldownSec) s.attackCooldownSec = 0;
+        if (s.attackCooldownSec > 0) s.attackCooldownSec -= dt;
+
         const angle = ringAngleOffset + (slotIdx * (Math.PI * 2 / countInThisRing));
         const orbitX = player.x + Math.cos(angle) * ringRadius;
         const orbitY = player.y + Math.sin(angle) * ringRadius;
         const distToOrbit = Math.hypot(orbitX - s.x, orbitY - s.y);
 
-        // 1. 歸隊完成判定 (回到自己的 orbit 站位點 15px 內)
         if (s.returning) {
           if (distToOrbit < 15) {
             s.returning = false;
           }
         }
 
-        // 2. 護衛動態離身邊界檢查：超過站位 250px (例如玩家走遠)，強制放棄目標回防
         if (distToOrbit > 250) {
           s.targetId = null;
           s.returning = true;
@@ -524,7 +557,6 @@ function updateGameTick(gameState, counters, io) {
 
         let target = null;
         if (!s.returning) {
-          // 3. 視線限制：只尋找小兵周圍 150px 內的敵人
           const inRange = attackables.filter(c => Math.hypot(c.x - s.x, c.y - s.y) <= 150);
           if (inRange.length > 0) {
             target = inRange.find(c => c.id === s.targetId) || inRange[0];
@@ -540,7 +572,10 @@ function updateGameTick(gameState, counters, io) {
             s.x += ((target.x - s.x) / dToTarget) * s.speed * dt;
             s.y += ((target.y - s.y) / dToTarget) * s.speed * dt;
           } else {
-            applyDamage(gameState, target, s.atk * 2.0 * dt, player.id);
+            if (s.attackCooldownSec <= 0) {
+              applyDamage(gameState, target, s.atk * 1.6, player.id);
+              s.attackCooldownSec = 0.8;
+            }
           }
 
           if (target.ref.hp <= 0) {
@@ -551,7 +586,6 @@ function updateGameTick(gameState, counters, io) {
           }
         } else {
           s.targetId = null;
-          // 4. 陣形跟隨與步長截斷
           if (distToOrbit > 0.5) {
             const catchUpFactor = 1.1 + Math.min(0.25, (distToOrbit / 300) * 0.25);
             const maxSpeed = s.speed * catchUpFactor;
@@ -564,8 +598,10 @@ function updateGameTick(gameState, counters, io) {
       ringRadius += 22;
     });
 
-    // 🟢 FREE 自由模式：動態目標切換 (敵人靠近 40px 以上自動換標)
     player.army.filter(s => s.state === 'FREE').forEach(s => {
+      if (!s.attackCooldownSec) s.attackCooldownSec = 0;
+      if (s.attackCooldownSec > 0) s.attackCooldownSec -= dt;
+
       let closestTarget = null;
       let minDistance = Infinity;
 
@@ -582,7 +618,6 @@ function updateGameTick(gameState, counters, io) {
         const currentTarget = attackables.find(c => c.id === s.targetId);
         if (currentTarget) {
           const currentDist = Math.hypot(currentTarget.x - s.x, currentTarget.y - s.y);
-          // 若出現比當前目標更近 40px 以上的新敵人，切換目標；否則繼續追當前目標
           if (closestTarget && closestTarget.id !== s.targetId && (currentDist - minDistance >= 40)) {
             activeTarget = closestTarget;
             s.targetId = closestTarget.id;
@@ -604,13 +639,18 @@ function updateGameTick(gameState, counters, io) {
           s.x += ((activeTarget.x - s.x) / minDistance) * s.speed * dt;
           s.y += ((activeTarget.y - s.y) / minDistance) * s.speed * dt;
         } else {
-          applyDamage(gameState, activeTarget, s.atk * 2.0 * dt, player.id);
+          if (s.attackCooldownSec <= 0) {
+            applyDamage(gameState, activeTarget, s.atk * 1.6, player.id);
+            s.attackCooldownSec = 0.8;
+          }
         }
       }
     });
 
-    // 🟢 HOLD 駐守模式：只攻擊駐守點 (anchor) 180px 範圍內的敵人
     player.army.filter(s => s.state === 'HOLD').forEach(s => {
+      if (!s.attackCooldownSec) s.attackCooldownSec = 0;
+      if (s.attackCooldownSec > 0) s.attackCooldownSec -= dt;
+
       const anchorX = s.anchorX || s.x;
       const anchorY = s.anchorY || s.y;
 
@@ -631,7 +671,10 @@ function updateGameTick(gameState, counters, io) {
           s.x += ((target.x - s.x) / minDist) * s.speed * dt;
           s.y += ((target.y - s.y) / minDist) * s.speed * dt;
         } else {
-          applyDamage(gameState, target, s.atk * 2.0 * dt, player.id);
+          if (s.attackCooldownSec <= 0) {
+            applyDamage(gameState, target, s.atk * 1.6, player.id);
+            s.attackCooldownSec = 0.8;
+          }
         }
       } else {
         s.targetId = null;
@@ -679,17 +722,19 @@ function updateGameTick(gameState, counters, io) {
     }
   }
 
-  const allSoldiers = [...gameState.neutralSoldiers];
-  Object.values(gameState.players).forEach(p => { if (!p.isDead) allSoldiers.push(...p.army); });
-  allSoldiers.forEach(s => {
+  // 🟢 修正 3：將怪物 (gameState.monsters) 納入全域圓形實體推擠陣列
+  const allPushables = [...gameState.neutralSoldiers, ...gameState.monsters];
+  Object.values(gameState.players).forEach(p => { if (!p.isDead) allPushables.push(...p.army); });
+
+  allPushables.forEach(s => {
     s.x = Math.max(bounds.minX + 10, Math.min(bounds.maxX - 10, s.x));
-    s.y = Math.max(bounds.minY + 10, Math.min(bounds.maxY - 10, s.y));
+    s.y = Math.max(bounds.minY + 10, Math.min(bounds.maxX - 10, s.y));
   });
 
-  for (let i = 0; i < allSoldiers.length; i++) {
-    for (let j = i + 1; j < allSoldiers.length; j++) {
-      const s1 = allSoldiers[i];
-      const s2 = allSoldiers[j];
+  for (let i = 0; i < allPushables.length; i++) {
+    for (let j = i + 1; j < allPushables.length; j++) {
+      const s1 = allPushables[i];
+      const s2 = allPushables[j];
       const r1 = s1.radius || 5;
       const r2 = s2.radius || 5;
       const dx = s2.x - s1.x;

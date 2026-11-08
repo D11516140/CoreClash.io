@@ -26,6 +26,23 @@ function getHpBarAlpha(entity, currentTick) {
   return 0.0;
 }
 
+// 🟢 單位受擊紅光閃爍 (Hit Flash: 10 幀內 55% 透明度紅外發光)[cite: 4]
+function drawHitFlash(pos, radius, currentTick, lastHitTick) {
+  if (!lastHitTick) return;
+  const diff = currentTick - lastHitTick;
+  if (diff >= 0 && diff <= 10) {
+    const alpha = (10 - diff) / 10 * 0.55;
+    ctx.save();
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#ff0055';
+    ctx.fillStyle = `rgba(255, 0, 85, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 function createExplosion(x, y, color, count = 12) {
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -150,9 +167,8 @@ function drawTooltipScreen(ctx, sx, sy, title, titleColor, basicItems, advancedI
   ctx.restore();
 }
 
-// 🎨 主畫面渲染函式
 function drawGameScene(state) {
-  activeTooltipButtons = []; // 每幀開始時重置點擊按鈕陣列
+  activeTooltipButtons = [];
 
   const bounds = state.mapBounds || { minX: 0, maxX: 1600, minY: 0, maxY: 1200, width: 1600, height: 1200, buffer: 600 };
   const currentTick = state.tickCount || 0;
@@ -166,7 +182,6 @@ function drawGameScene(state) {
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 1. 地圖網格與邊界
   ctx.strokeStyle = 'rgba(0, 240, 255, 0.03)';
   ctx.lineWidth = 1;
   const buf = bounds.buffer;
@@ -208,7 +223,6 @@ function drawGameScene(state) {
   ctx.strokeRect(wallTopLeft.x, wallTopLeft.y, wallW, wallH);
   ctx.shadowBlur = 0;
 
-  // 2. 領地氣場
   const drawClampedGroundAura = (units, colorRgb, maxCapOpacity = 0.25) => {
     if (units.length === 0) return;
     auraCtx.clearRect(0, 0, auraCanvas.width, auraCanvas.height);
@@ -254,11 +268,12 @@ function drawGameScene(state) {
   drawClampedGroundAura(selfGroundUnits, '0, 180, 85', 0.25);
   drawClampedGroundAura(enemyGroundUnits, '190, 25, 55', 0.25);
 
-  // 3. 防禦塔
   state.towers.forEach(t => {
     const pos = worldToScreen(t.x, t.y);
     const isAdv = t.type === 'ADVANCED';
     const typeColor = isAdv ? '#c026d3' : '#2563eb';
+
+    drawHitFlash(pos, 15, currentTick, t.lastHitTick);
 
     ctx.shadowBlur = 10; ctx.shadowColor = typeColor;
     ctx.fillStyle = typeColor;
@@ -276,7 +291,6 @@ function drawGameScene(state) {
     }
   });
 
-  // 4. 雷射
   state.lasers.forEach(l => {
     const p1 = worldToScreen(l.x1, l.y1);
     const p2 = worldToScreen(l.x2, l.y2);
@@ -287,10 +301,11 @@ function drawGameScene(state) {
     ctx.shadowBlur = 0;
   });
 
-  // 5. 基地核心
   Object.values(state.players).forEach(p => {
     if (p.core && p.core.hp > 0) {
       const pos = worldToScreen(p.core.x, p.core.y);
+      drawHitFlash(pos, 20, currentTick, p.core.lastHitTick);
+
       ctx.shadowBlur = 16; ctx.shadowColor = '#00f0ff';
       ctx.fillStyle = '#00f0ff';
       ctx.fillRect(pos.x - 18, pos.y - 18, 36, 36);
@@ -308,13 +323,16 @@ function drawGameScene(state) {
     }
   });
 
-  // 6. 怪物
   state.monsters.forEach(m => {
     const pos = worldToScreen(m.x, m.y);
     const mColor = m.isRaid ? '#ff0055' : '#a855f7';
+    const mRadius = m.isRaid ? 10 : 8;
+
+    drawHitFlash(pos, mRadius, currentTick, m.lastHitTick);
+
     ctx.shadowBlur = m.isRaid ? 14 : 10; ctx.shadowColor = mColor;
     ctx.fillStyle = mColor;
-    ctx.beginPath(); ctx.arc(pos.x, pos.y, m.isRaid ? 11 : 9, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, mRadius, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0;
 
     const hpAlpha = getHpBarAlpha(m, currentTick);
@@ -328,13 +346,14 @@ function drawGameScene(state) {
     }
   });
 
-  // 7. 部隊小兵
   Object.values(state.players).forEach(p => {
     p.army.forEach(s => {
       const pos = worldToScreen(s.x, s.y);
       const isHeavy = s.type === 'HEAVY';
       const typeColor = isHeavy ? '#4f46e5' : '#38bdf8';
       const radius = s.radius || 5;
+
+      drawHitFlash(pos, radius, currentTick, s.lastHitTick);
 
       ctx.shadowBlur = isHeavy ? 8 : 0; ctx.shadowColor = typeColor;
       ctx.fillStyle = typeColor;
@@ -353,7 +372,6 @@ function drawGameScene(state) {
     });
   });
 
-  // 8. 中立單位
   if (state.neutralSoldiers) {
     state.neutralSoldiers.forEach(ns => {
       const pos = worldToScreen(ns.x, ns.y);
@@ -364,10 +382,11 @@ function drawGameScene(state) {
     });
   }
 
-  // 9. 指揮官
   Object.values(state.players).forEach(p => {
     if (p.isDead || !p.isOnline) return;
     const pos = worldToScreen(p.x, p.y);
+
+    drawHitFlash(pos, 12, currentTick, p.lastHitTick);
 
     ctx.shadowBlur = 15; ctx.shadowColor = '#ffd700';
     ctx.fillStyle = '#ffd700';
@@ -392,7 +411,7 @@ function drawGameScene(state) {
     }
   });
 
-  // 10. 放置預覽
+  // 🟢 10. 放置預覽與精準 placement 失敗提示[cite: 4]
   if (me && !me.isDead) {
     const gridX = Math.floor(mousePos.x / 40) * 40 + 20;
     const gridY = Math.floor(mousePos.y / 40) * 40 + 20;
@@ -457,7 +476,14 @@ function drawGameScene(state) {
 
       ctx.font = 'bold 13px Segoe UI'; ctx.fillStyle = strokeColor; ctx.textAlign = 'center';
       const towerName = isAdv ? '中級重砲塔' : '初階塔';
-      ctx.fillText(isValid ? `左鍵放置${towerName} | 右鍵 / [~] 取消` : '位置無效或金幣不足', mouseScreenPos.x, mouseScreenPos.y - 25);
+
+      let promptMsg = `左鍵放置${towerName} | 右鍵 / [~] 取消`;
+      if (!canAfford) promptMsg = `💰 金幣不足 (需 ${cost}G)`;
+      else if (isOutBounds) promptMsg = '🚫 超出地圖邊界';
+      else if (isTooFar) promptMsg = '📡 超出基地核心領地範圍 (350px)';
+      else if (isOccupied) promptMsg = '⚠️ 該位置已被其他建築/核心佔據';
+
+      ctx.fillText(promptMsg, mouseScreenPos.x, mouseScreenPos.y - 25);
     }
   }
 
@@ -479,14 +505,15 @@ function drawGameScene(state) {
           const targetAlliance = targetP.allianceId ? state.alliances[targetP.allianceId] : null;
           const targetIsLeader = targetAlliance && (targetAlliance.leaderId === targetP.id);
 
-          const actions = [];
+          const totalWeight = targetP.army ? targetP.army.reduce((acc, s) => acc + (s.type === 'HEAVY' ? 2 : 1), 0) : 0;
+          const speedPct = Math.round((targetP.speedRatio !== undefined ? targetP.speedRatio : 1.0) * 100);
 
+          const actions = [];
           if (!isSelf && !targetP.isDead && me) {
             if (!me.allianceId) {
               if (targetP.allianceId && targetAlliance) {
                 const mode = targetAlliance.recruitmentMode || 'REVIEW';
-                if (mode === 'CLOSED') {
-                } else if (mode === 'FREE') {
+                if (mode === 'FREE') {
                   actions.push({
                     label: `⚡ 自由加入 [${targetAlliance.name}]`,
                     hoverColor: 'rgba(0, 255, 102, 0.3)',
@@ -494,7 +521,7 @@ function drawGameScene(state) {
                     textColor: '#00ff66',
                     onClick: () => sendAction('applyToAlliance', targetP.allianceId)
                   });
-                } else {
+                } else if (mode !== 'CLOSED') {
                   actions.push({
                     label: `📩 申請加入 [${targetAlliance.name}]`,
                     hoverColor: 'rgba(0, 240, 255, 0.3)',
@@ -504,34 +531,22 @@ function drawGameScene(state) {
                   });
                 }
               }
-            } else if (me.allianceId && !meIsLeader) {
-              if (!targetP.allianceId) {
-                actions.push({
-                  label: '✉️ 邀請加入聯盟 (需盟主審核)',
-                  hoverColor: 'rgba(0, 255, 102, 0.3)',
-                  borderColor: 'rgba(0, 255, 102, 0.6)',
-                  textColor: '#00ff66',
-                  onClick: () => sendAction('inviteToAlliance', targetP.id)
-                });
-              }
-            } else if (me.allianceId && meIsLeader) {
-              if (!targetP.allianceId) {
-                actions.push({
-                  label: '👑 特邀加入聯盟 (直接入盟)',
-                  hoverColor: 'rgba(0, 255, 102, 0.3)',
-                  borderColor: 'rgba(0, 255, 102, 0.6)',
-                  textColor: '#00ff66',
-                  onClick: () => sendAction('inviteToAlliance', targetP.id)
-                });
-              } else if (targetP.allianceId !== me.allianceId && !targetIsLeader) {
-                actions.push({
-                  label: '🎯 挖腳加入聯盟 (對方同意後跳槽)',
-                  hoverColor: 'rgba(236, 72, 153, 0.3)',
-                  borderColor: 'rgba(236, 72, 153, 0.6)',
-                  textColor: '#ec4899',
-                  onClick: () => sendAction('poachPlayer', targetP.id)
-                });
-              }
+            } else if (me.allianceId && meIsLeader && !targetP.allianceId) {
+              actions.push({
+                label: '👑 特邀加入聯盟 (直接入盟)',
+                hoverColor: 'rgba(0, 255, 102, 0.3)',
+                borderColor: 'rgba(0, 255, 102, 0.6)',
+                textColor: '#00ff66',
+                onClick: () => sendAction('inviteToAlliance', targetP.id)
+              });
+            } else if (me.allianceId && meIsLeader && targetP.allianceId !== me.allianceId && !targetIsLeader) {
+              actions.push({
+                label: '🎯 挖腳加入聯盟 (對方同意後跳槽)',
+                hoverColor: 'rgba(236, 72, 153, 0.3)',
+                borderColor: 'rgba(236, 72, 153, 0.6)',
+                textColor: '#ec4899',
+                onClick: () => sendAction('poachPlayer', targetP.id)
+              });
             }
           }
 
@@ -544,7 +559,7 @@ function drawGameScene(state) {
               { label: '所屬聯盟', val: targetAlliance ? targetAlliance.name : '無所屬', color: targetAlliance ? targetAlliance.color : '#9ca3af' }
             ],
             advanced: [
-              { label: '軍隊數量', val: `${targetP.army.length} 單位`, color: '#00f0ff' },
+              { label: '軍隊負重', val: `${totalWeight} / 70 (${speedPct}% 移速)`, color: '#00f0ff' },
               { label: '戰術模式', val: `${targetP.armyState}`, color: '#ff0055' }
             ],
             actions: actions
@@ -558,7 +573,6 @@ function drawGameScene(state) {
           const isSelf = t.ownerId === myPlayerId;
           const isAlly = me && me.allianceId && state.players[t.ownerId] && state.players[t.ownerId].allianceId === me.allianceId;
 
-          // 🟢 前端安全動態計算賣出殘值與百分比
           const maxRefund = isAdv ? 140 : 70;
           const maxHp = t.maxHp || 500;
           const hpRatio = Math.max(0, Math.min(1.0, t.hp / maxHp));
@@ -620,7 +634,6 @@ function drawGameScene(state) {
           const isSelf = ownerP && ownerP.id === myPlayerId;
           const isNeutral = !ownerP;
 
-          // 🟢 前端安全動態計算賣出殘值與百分比
           const maxRefund = isHeavy ? 84 : 35;
           const maxHp = foundSoldier.maxHp || (isHeavy ? 280 : 100);
           const hpRatio = Math.max(0, Math.min(1.0, foundSoldier.hp / maxHp));
@@ -661,8 +674,8 @@ function drawGameScene(state) {
             title: isNeutral ? '灰色中立單位 (靠近招募)' : `${isHeavy ? '中級裝甲兵' : '初級步兵'} (${isSelf ? '己方' : '敵方'})`,
             titleColor: isNeutral ? '#9ca3af' : (isHeavy ? '#4f46e5' : '#38bdf8'),
             basic: [
-              { label: '血量', val: `${Math.ceil(foundSoldier.hp)} / ${foundSoldier.maxHp}`, color: '#ffb700' },
-              { label: '陣營', val: isNeutral ? '中立野放' : (isSelf ? '己方' : '敵方'), color: '#9ca3af' }
+              { label: '單位血量', val: `${Math.ceil(foundSoldier.hp)} / ${foundSoldier.maxHp}`, color: '#ffb700' },
+              { label: '單位負重', val: `${isHeavy ? 2 : 1} 點`, color: '#00f0ff' }
             ],
             advanced: [
               { label: '攻擊力', val: `${foundSoldier.atk}`, color: '#ff0055' },
@@ -715,7 +728,6 @@ function drawGameScene(state) {
     }
   }
 
-  // 12. 粒子與浮動文字
   for (let i = particles.length - 1; i >= 0; i--) {
     const pt = particles[i];
     pt.x += pt.vx; pt.y += pt.vy; pt.life -= pt.decay;
@@ -738,7 +750,6 @@ function drawGameScene(state) {
 
   ctx.restore();
 
-  // 13. 指揮官陣亡提示
   if (me && me.isDead && me.core) {
     ctx.font = 'bold 24px Segoe UI'; ctx.fillStyle = '#ff0055'; ctx.textAlign = 'center';
     ctx.fillText(`💀 指揮官陣亡！倒地復活倒數: ${Math.ceil(me.respawnTimerSec)} 秒`, canvas.width / 2, canvas.height / 2 - 50);
