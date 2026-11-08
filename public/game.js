@@ -36,6 +36,8 @@ document.getElementById('nickname-input')?.addEventListener('keydown', (e) => {
 const keys = { w: false, a: false, s: false, d: false };
 const mousePos = { x: 0, y: 0 };
 const mouseScreenPos = { x: 0, y: 0 };
+let rawClientX = 0;
+let rawClientY = 0;
 let camera = { x: 800, y: 600 };
 
 let activeMenu = null;
@@ -53,6 +55,11 @@ function clearPinnedTooltip() {
 const particles = [];
 const floatingTexts = [];
 
+// 快取 Canvas DOM 矩形
+let cachedCanvasRect = canvas.getBoundingClientRect();
+window.addEventListener('resize', () => { cachedCanvasRect = canvas.getBoundingClientRect(); });
+window.addEventListener('scroll', () => { cachedCanvasRect = canvas.getBoundingClientRect(); });
+
 function triggerMenuKey(key) {
   clearPinnedTooltip();
   const me = lastGameState ? lastGameState.players[myPlayerId] : null;
@@ -64,7 +71,6 @@ function triggerMenuKey(key) {
     return;
   }
 
-  // 防禦塔選單內的 1/2 切換與 Toggle 取消
   if (activeMenu === 'TOWER_MENU' || buildMode === 'TOWER_BASIC' || buildMode === 'TOWER_ADVANCED') {
     if (key === '1') { buildMode = (buildMode === 'TOWER_BASIC') ? null : 'TOWER_BASIC'; activeMenu = null; }
     else if (key === '2') { buildMode = (buildMode === 'TOWER_ADVANCED') ? null : 'TOWER_ADVANCED'; activeMenu = null; }
@@ -72,7 +78,6 @@ function triggerMenuKey(key) {
     return;
   }
 
-  // 軍隊選單內的 1/2 購買
   if (activeMenu === 'ARMY_MENU') {
     if (key === '1') sendAction('buySoldier', 'BASIC');
     else if (key === '2') sendAction('buySoldier', 'HEAVY');
@@ -80,7 +85,6 @@ function triggerMenuKey(key) {
     return;
   }
 
-  // 主選單的 E / 1 / 2 / F
   if (key === 'E') { sendAction('teleportCore'); buildMode = null; }
   else if (key === '1') { activeMenu = 'TOWER_MENU'; buildMode = null; }
   else if (key === '2') { activeMenu = 'ARMY_MENU'; buildMode = null; }
@@ -95,21 +99,18 @@ function exitSubMenu() {
   updateUI();
 }
 
+// 🟢 1. mousemove 僅紀錄純螢幕座標 (0% CPU/DOM 開銷)
 canvas.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  mouseScreenPos.x = (e.clientX - rect.left) * (canvas.width / rect.width);
-  mouseScreenPos.y = (e.clientY - rect.top) * (canvas.height / rect.height);
-  const wPos = screenToWorld(mouseScreenPos.x, mouseScreenPos.y);
-  mousePos.x = wPos.x; mousePos.y = wPos.y;
+  rawClientX = e.clientX;
+  rawClientY = e.clientY;
 });
 
 canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); exitSubMenu(); });
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button === 0) {
-    const rect = canvas.getBoundingClientRect();
-    const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const clickX = mouseScreenPos.x;
+    const clickY = mouseScreenPos.y;
 
     for (const btn of activeTooltipButtons) {
       if (clickX >= btn.x && clickX <= btn.x + btn.w && clickY >= btn.y && clickY <= btn.y + btn.h) {
@@ -197,7 +198,10 @@ function findEntityAtPos(wx, wy) {
   return null;
 }
 
+// 🟢 2. 過濾 OS 長按按鈕自動重複 (e.repeat)，防止走直線時塞爆事件佇列
 window.addEventListener('keydown', (e) => {
+  if (e.repeat) return; // 關鍵修復：忽略 Windows 自動重複 keydown 封包
+
   if (e.code === 'Tab') { e.preventDefault(); showDetailedInfo = !showDetailedInfo; return; }
   if (e.code === 'KeyW') keys.w = true;
   if (e.code === 'KeyA') keys.a = true;
@@ -217,7 +221,14 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'KeyD') keys.d = false;
 });
 
-setInterval(() => { if (socket.connected) socket.emit('playerInput', keys); }, 1000 / 60);
+// 視窗失去焦點時自動清空按鍵，避免停不下來
+window.addEventListener('blur', () => {
+  keys.w = false; keys.a = false; keys.s = false; keys.d = false;
+});
+
+setInterval(() => {
+  if (socket.connected) socket.emit('playerInput', keys);
+}, 1000 / 60);
 
 function sendAction(action, data) { if (socket.connected) socket.emit(action, data); }
 
@@ -227,7 +238,6 @@ function restartGame() {
   socket.emit('restartGame');
 }
 
-// 🟢 回到大廳控制
 function returnToLobby() {
   document.getElementById('game-over-modal').style.display = 'none';
   document.getElementById('lobby-modal').style.display = 'flex';
@@ -235,15 +245,9 @@ function returnToLobby() {
   socket.emit('returnToLobby');
 }
 
+// 🟢 3. 網路封包處理：僅更新資料與執行 HUD 變更（不混在 rAF 內）
 socket.on('gameState', (state) => {
   lastGameState = state;
-  const me = state.players[myPlayerId];
-
-  if (me && !me.isDead) { camera.x = me.x; camera.y = me.y; }
-  else if (me && me.core) { camera.x = me.core.x; camera.y = me.core.y; }
-
-  const wPos = screenToWorld(mouseScreenPos.x, mouseScreenPos.y);
-  mousePos.x = wPos.x; mousePos.y = wPos.y;
 
   if (state.events) {
     state.events.forEach(ev => {
@@ -256,6 +260,28 @@ socket.on('gameState', (state) => {
     });
   }
 
-  drawGameScene(state);
   updateHUD(state);
 });
+
+// 🟢 4. 純 Canvas 獨立繪圖迴圈 (零 DOM 操作，與顯示器 60/144/240Hz 完美同步)
+function renderLoop() {
+  if (lastGameState) {
+    const state = lastGameState;
+    const me = state.players[myPlayerId];
+
+    if (me && !me.isDead) { camera.x = me.x; camera.y = me.y; }
+    else if (me && me.core) { camera.x = me.core.x; camera.y = me.core.y; }
+
+    mouseScreenPos.x = (rawClientX - cachedCanvasRect.left) * (canvas.width / cachedCanvasRect.width);
+    mouseScreenPos.y = (rawClientY - cachedCanvasRect.top) * (canvas.height / cachedCanvasRect.height);
+
+    const wPos = screenToWorld(mouseScreenPos.x, mouseScreenPos.y);
+    mousePos.x = wPos.x;
+    mousePos.y = wPos.y;
+
+    drawGameScene(state);
+  }
+  requestAnimationFrame(renderLoop);
+}
+
+requestAnimationFrame(renderLoop);

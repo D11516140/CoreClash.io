@@ -139,7 +139,6 @@ function setRecruitmentModeUI(mode) {
   closeSettingsModal();
 }
 
-// 👑 轉讓盟主
 function transferLeadershipUI(targetId, targetName) {
   showCustomConfirm(
     '👑 轉讓盟主確認',
@@ -148,7 +147,6 @@ function transferLeadershipUI(targetId, targetName) {
   );
 }
 
-// 🚫 踢除成員
 function kickMemberUI(targetId, targetName) {
   showCustomConfirm(
     '🚫 踢除成員確認',
@@ -157,7 +155,6 @@ function kickMemberUI(targetId, targetName) {
   );
 }
 
-// 📜 全體成員 Modal 控制
 function openMembersModal() {
   const me = lastGameState ? lastGameState.players[myPlayerId] : null;
   if (!me || !me.allianceId || !lastGameState.alliances[me.allianceId]) return;
@@ -219,23 +216,49 @@ function closeMembersModal() {
   if (modal) modal.style.display = 'none';
 }
 
-// 🎛️ 底部控制列更新
+// 🟢 DOM 節點快取 (避免高頻 getElementById 搜尋)
+const uiElements = {
+  btnBack: null, btnCore: null, btn1: null, btn2: null, btnF: null,
+  lblE: null, lbl1: null, lbl2: null,
+  lbList: null, onlineCount: null,
+  uiGold: null, uiCoreHpText: null, uiCoreHpBar: null, uiArmyCount: null, uiMoveSpeed: null, uiArmyMode: null
+};
+
+function initUIElementsCache() {
+  uiElements.btnBack = document.getElementById('btn-back');
+  uiElements.btnCore = document.getElementById('btn-core');
+  uiElements.btn1 = document.getElementById('btn-menu1');
+  uiElements.btn2 = document.getElementById('btn-menu2');
+  uiElements.btnF = document.getElementById('btn-f');
+  uiElements.lblE = document.getElementById('label-e');
+  uiElements.lbl1 = document.getElementById('label-1');
+  uiElements.lbl2 = document.getElementById('label-2');
+  uiElements.lbList = document.getElementById('leaderboard-list');
+  uiElements.onlineCount = document.getElementById('ui-player-count');
+  uiElements.uiGold = document.getElementById('ui-gold');
+  uiElements.uiCoreHpText = document.getElementById('ui-core-hp-text');
+  uiElements.uiCoreHpBar = document.getElementById('ui-core-hp-bar');
+  uiElements.uiArmyCount = document.getElementById('ui-army-count');
+  uiElements.uiMoveSpeed = document.getElementById('ui-move-speed');
+  uiElements.uiArmyMode = document.getElementById('ui-army-mode');
+}
+
+window.addEventListener('DOMContentLoaded', initUIElementsCache);
+
+let lastUIStateCache = '';
+let lastLbHTMLCache = '';
+let lastHudDataCache = '';
+
 function updateUI() {
   const me = lastGameState ? lastGameState.players[myPlayerId] : null;
-
-  const btnBack = document.getElementById('btn-back');
-  const btnCore = document.getElementById('btn-core');
-  const btn1 = document.getElementById('btn-menu1');
-  const btn2 = document.getElementById('btn-menu2');
-  const btnF = document.getElementById('btn-f');
-
-  const lblE = document.getElementById('label-e');
-  const lbl1 = document.getElementById('label-1');
-  const lbl2 = document.getElementById('label-2');
-
   if (!me) return;
+  if (!uiElements.btnCore) initUIElementsCache();
 
-  [btnCore, btn1, btn2, btnF, btnBack].forEach(b => {
+  const currentStateKey = `${me.isDead}_${!!me.core}_${activeMenu}_${buildMode}`;
+  if (currentStateKey === lastUIStateCache) return;
+  lastUIStateCache = currentStateKey;
+
+  [uiElements.btnCore, uiElements.btn1, uiElements.btn2, uiElements.btnF, uiElements.btnBack].forEach(b => {
     if (b) {
       b.classList.remove('active', 'sub-active');
       if (document.activeElement === b) b.blur();
@@ -243,73 +266,71 @@ function updateUI() {
   });
 
   if (me.isDead && me.core) {
-    btnBack.style.display = 'none';
-    btnCore.style.display = 'none';
-    btn1.style.display = 'none';
-    btn2.style.display = 'none';
-    btnF.style.display = 'none';
+    if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
+    if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
+    if (uiElements.btn1) uiElements.btn1.style.display = 'none';
+    if (uiElements.btn2) uiElements.btn2.style.display = 'none';
+    if (uiElements.btnF) uiElements.btnF.style.display = 'none';
     return;
   }
 
   if (!me.core) {
-    btnBack.style.display = 'none';
-    btnCore.style.display = 'flex';
-    btn1.style.display = 'none';
-    btn2.style.display = 'none';
-    btnF.style.display = 'none';
-    lblE.innerText = '建基地';
-    btnCore.classList.toggle('sub-active', buildMode === 'CORE');
+    if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
+    if (uiElements.btnCore) uiElements.btnCore.style.display = 'flex';
+    if (uiElements.btn1) uiElements.btn1.style.display = 'none';
+    if (uiElements.btn2) uiElements.btn2.style.display = 'none';
+    if (uiElements.btnF) uiElements.btnF.style.display = 'none';
+    if (uiElements.lblE) uiElements.lblE.innerText = '建基地';
+    uiElements.btnCore.classList.toggle('sub-active', buildMode === 'CORE');
     return;
   }
 
   if (activeMenu === 'TOWER_MENU' || buildMode === 'TOWER_BASIC' || buildMode === 'TOWER_ADVANCED') {
-    btnBack.style.display = 'flex';
-    btnCore.style.display = 'none';
-    btn1.style.display = 'flex';
-    btn2.style.display = 'flex';
-    btnF.style.display = 'none';
+    if (uiElements.btnBack) uiElements.btnBack.style.display = 'flex';
+    if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
+    if (uiElements.btn1) uiElements.btn1.style.display = 'flex';
+    if (uiElements.btn2) uiElements.btn2.style.display = 'flex';
+    if (uiElements.btnF) uiElements.btnF.style.display = 'none';
 
-    lbl1.innerText = buildMode === 'TOWER_BASIC' ? '初階塔(100G) [預覽]' : '初階塔(100G)';
-    lbl2.innerText = buildMode === 'TOWER_ADVANCED' ? '中級重砲(200G) [預覽]' : '中級重砲(200G)';
+    if (uiElements.lbl1) uiElements.lbl1.innerText = buildMode === 'TOWER_BASIC' ? '初階塔(100G) [預覽]' : '初階塔(100G)';
+    if (uiElements.lbl2) uiElements.lbl2.innerText = buildMode === 'TOWER_ADVANCED' ? '中級重砲(200G) [預覽]' : '中級重砲(200G)';
 
-    btn1.classList.toggle('sub-active', buildMode === 'TOWER_BASIC');
-    btn2.classList.toggle('sub-active', buildMode === 'TOWER_ADVANCED');
+    uiElements.btn1.classList.toggle('sub-active', buildMode === 'TOWER_BASIC');
+    uiElements.btn2.classList.toggle('sub-active', buildMode === 'TOWER_ADVANCED');
     return;
   }
 
   if (activeMenu === 'ARMY_MENU') {
-    btnBack.style.display = 'flex';
-    btnCore.style.display = 'none';
-    btn1.style.display = 'flex';
-    btn2.style.display = 'flex';
-    btnF.style.display = 'none';
+    if (uiElements.btnBack) uiElements.btnBack.style.display = 'flex';
+    if (uiElements.btnCore) uiElements.btnCore.style.display = 'none';
+    if (uiElements.btn1) uiElements.btn1.style.display = 'flex';
+    if (uiElements.btn2) uiElements.btn2.style.display = 'flex';
+    if (uiElements.btnF) uiElements.btnF.style.display = 'none';
 
-    lbl1.innerText = '初級兵(50G)';
-    lbl2.innerText = '中級裝甲(120G)';
+    if (uiElements.lbl1) uiElements.lbl1.innerText = '初級兵(50G)';
+    if (uiElements.lbl2) uiElements.lbl2.innerText = '中級裝甲(120G)';
     return;
   }
 
-  btnBack.style.display = 'none';
-  btnCore.style.display = 'flex';
-  btn1.style.display = 'flex';
-  btn2.style.display = 'flex';
-  btnF.style.display = 'flex';
+  if (uiElements.btnBack) uiElements.btnBack.style.display = 'none';
+  if (uiElements.btnCore) uiElements.btnCore.style.display = 'flex';
+  if (uiElements.btn1) uiElements.btn1.style.display = 'flex';
+  if (uiElements.btn2) uiElements.btn2.style.display = 'flex';
+  if (uiElements.btnF) uiElements.btnF.style.display = 'flex';
 
-  lblE.innerText = '傳送回基地';
-  lbl1.innerText = '防禦塔選單';
-  lbl2.innerText = '軍隊徵召選單';
+  if (uiElements.lblE) uiElements.lblE.innerText = '傳送回基地';
+  if (uiElements.lbl1) uiElements.lbl1.innerText = '防禦塔選單';
+  if (uiElements.lbl2) uiElements.lbl2.innerText = '軍隊徵召選單';
 }
 
-// 📊 每幀 HUD 與數據更新 (Top 4 + 自己/5名動態釘選)
 function updateHUD(state) {
   const me = state.players[myPlayerId];
-  const lbList = document.getElementById('leaderboard-list');
-  const onlineCount = document.getElementById('ui-player-count');
+  if (!uiElements.uiGold) initUIElementsCache();
   const playersArr = Object.values(state.players);
 
-  if (onlineCount) onlineCount.innerText = `${playersArr.filter(p => p.isOnline).length} 在線`;
+  if (uiElements.lbList) {
+    let newLbHTML = '';
 
-  if (lbList) {
     if (currentLeaderboardTab === 'PLAYER') {
       const sorted = [...playersArr].sort((a, b) => (b.score || 0) - (a.score || 0));
       const myRankIdx = sorted.findIndex(p => p.id === myPlayerId);
@@ -322,7 +343,7 @@ function updateHUD(state) {
         displayList = sorted.slice(0, 5).map((p, i) => ({ ...p, actualRank: i + 1 }));
       }
 
-      lbList.innerHTML = displayList.map((p) => {
+      newLbHTML = displayList.map((p) => {
         const isMe = (p.id === myPlayerId);
         const ally = p.allianceId ? state.alliances[p.allianceId] : null;
         const allyTag = ally ? `<span style="color: ${ally.color}; font-size: 10px; margin-left: 4px;">[${ally.name}]</span>` : '';
@@ -349,9 +370,9 @@ function updateHUD(state) {
       }
 
       if (displayList.length === 0) {
-        lbList.innerHTML = `<div style="font-size: 11px; color: #9ca3af; text-align: center; padding: 12px 0;">尚無成立聯盟</div>`;
+        newLbHTML = `<div style="font-size: 11px; color: #9ca3af; text-align: center; padding: 12px 0;">尚無成立聯盟</div>`;
       } else {
-        lbList.innerHTML = displayList.map((a) => {
+        newLbHTML = displayList.map((a) => {
           const isMyAlly = (myAllyId && a.id === myAllyId);
           const hasOnlineMembers = a.memberIds.some(memId => state.players[memId] && state.players[memId].isOnline);
           const offlineTag = !hasOnlineMembers ? `<span style="color: #9ca3af; font-size: 10px; margin-left: 4px;">(全員離線)</span>` : '';
@@ -367,127 +388,56 @@ function updateHUD(state) {
         }).join('');
       }
     }
+
+    if (newLbHTML !== lastLbHTMLCache) {
+      lastLbHTMLCache = newLbHTML;
+      uiElements.lbList.innerHTML = newLbHTML;
+      if (uiElements.onlineCount) uiElements.onlineCount.innerText = `${playersArr.filter(p => p.isOnline).length} 在線`;
+    }
   }
 
-  // 2. 聯盟面板與邀請提示
-  const createBox = document.getElementById('alliance-create-box');
-  const inviteBox = document.getElementById('alliance-invite-box');
-  const noticeText = document.getElementById('invite-notice-text');
-  const infoBox = document.getElementById('alliance-info-box');
-  const displayName = document.getElementById('alliance-display-name');
-  const memberCountEl = document.getElementById('alliance-member-count');
-  const topMembersEl = document.getElementById('alliance-top-members');
-  const settingBtn = document.getElementById('alliance-setting-btn');
-  const leaveBtn = document.getElementById('alliance-leave-btn');
-  const reqContainer = document.getElementById('alliance-requests-container');
-  const reqTitle = document.getElementById('req-count-title');
-  const reqOldestName = document.getElementById('req-oldest-name');
-
   if (me) {
-    if (me.allianceId && state.alliances[me.allianceId]) {
-      const ally = state.alliances[me.allianceId];
-      const isLeader = (ally.leaderId === me.id);
+    const totalWeight = me.army.reduce((acc, s) => acc + (s.type === 'HEAVY' ? 2 : 1), 0);
+    const coreHp = me.core ? Math.ceil(me.core.hp) : -1;
+    const speedRatio = me.speedRatio !== undefined ? me.speedRatio : 1.0;
 
-      if (createBox) createBox.style.display = 'none';
-      if (inviteBox) inviteBox.style.display = 'none';
-      if (infoBox) infoBox.style.display = 'flex';
+    const currentDataKey = `${me.gold}_${coreHp}_${totalWeight}_${speedRatio}_${me.armyState}_${me.isDead}`;
 
-      if (displayName) {
-        displayName.innerText = `${isLeader ? '👑 盟主' : '🛡️ 成員'} [${ally.name}]`;
-        displayName.style.color = ally.color;
-      }
+    if (currentDataKey !== lastHudDataCache) {
+      lastHudDataCache = currentDataKey;
 
-      if (settingBtn) settingBtn.style.display = isLeader ? 'block' : 'none';
+      if (uiElements.uiGold) uiElements.uiGold.innerText = me.gold;
 
-      if (leaveBtn) {
-        if (isLeader && ally.memberIds.length > 1) {
-          leaveBtn.classList.add('disabled');
-          leaveBtn.title = '身為盟主需先轉讓職位才可退出！';
-        } else {
-          leaveBtn.classList.remove('disabled');
-          leaveBtn.title = isLeader ? '解散聯盟' : '退出聯盟';
-        }
-      }
-
-      if (memberCountEl) memberCountEl.innerText = `成員 (${ally.memberIds.length}人)`;
-      if (topMembersEl) {
-        const sortedMembers = ally.memberIds.map(id => state.players[id]).filter(Boolean).sort((a, b) => (b.score || 0) - (a.score || 0));
-        const top3 = sortedMembers.slice(0, 3);
-        topMembersEl.innerHTML = top3.map(m => `
-          <div style="display: flex; justify-content: space-between; margin-top: 2px;" class="${!m.isOnline ? 'offline' : ''}">
-            <span style="color: ${!m.isOnline ? '#9ca3af' : 'var(--text)'};">${m.id === ally.leaderId ? '👑' : '🛡️'} ${m.name} ${!m.isOnline ? '(離線)' : ''}</span>
-            <span style="color: ${!m.isOnline ? '#9ca3af' : 'var(--primary)'};">${m.score || 0} Pts</span>
-          </div>
-        `).join('');
-      }
-
-      if (isLeader && ally.pendingRequests && ally.pendingRequests.length > 0) {
-        if (reqContainer) reqContainer.style.display = 'flex';
-        if (reqTitle) reqTitle.innerText = `📥 申請清單 (${ally.pendingRequests.length})`;
-        if (reqOldestName) reqOldestName.innerText = ally.pendingRequests[0].applicantName;
+      if (me.core) {
+        if (uiElements.uiCoreHpText) uiElements.uiCoreHpText.innerText = `${coreHp} / 1000`;
+        if (uiElements.uiCoreHpBar) uiElements.uiCoreHpBar.style.width = `${(coreHp / 1000) * 100}%`;
       } else {
-        if (reqContainer) reqContainer.style.display = 'none';
+        if (uiElements.uiCoreHpText) uiElements.uiCoreHpText.innerText = '未放置 (按E)';
+        if (uiElements.uiCoreHpBar) uiElements.uiCoreHpBar.style.width = '0%';
       }
-    } else if (me.pendingInvite || me.pendingPoach) {
-      if (createBox) createBox.style.display = 'none';
-      if (infoBox) infoBox.style.display = 'none';
-      if (inviteBox) inviteBox.style.display = 'flex';
 
-      if (noticeText) {
-        if (me.pendingInvite) {
-          noticeText.innerText = me.pendingInvite.isLeader
-            ? `👑 [${me.pendingInvite.allianceName}] 盟主特邀`
-            : `📩 [${me.pendingInvite.allianceName}] 邀請組隊`;
-        } else if (me.pendingPoach) {
-          noticeText.innerText = `🎯 [${me.pendingPoach.allianceName}] 發起挖腳`;
-        }
+      if (uiElements.uiArmyCount) uiElements.uiArmyCount.innerText = `${totalWeight} / 70`;
+
+      if (uiElements.uiMoveSpeed) {
+        const pct = Math.round(speedRatio * 100);
+        uiElements.uiMoveSpeed.innerText = `${pct}%`;
+        if (pct > 80) uiElements.uiMoveSpeed.style.color = '#00ff66';
+        else if (pct >= 51) uiElements.uiMoveSpeed.style.color = '#ffb700';
+        else if (pct >= 21) uiElements.uiMoveSpeed.style.color = '#ff0055';
+        else uiElements.uiMoveSpeed.style.color = '#800000';
       }
-    } else {
-      if (createBox) createBox.style.display = 'block';
-      if (inviteBox) inviteBox.style.display = 'none';
-      if (infoBox) infoBox.style.display = 'none';
+
+      if (uiElements.uiArmyMode) {
+        if (me.armyState === 'FREE') { uiElements.uiArmyMode.innerText = '⚔️ 自由 (FREE)'; uiElements.uiArmyMode.style.color = '#ffb700'; }
+        else if (me.armyState === 'HOLD') { uiElements.uiArmyMode.innerText = '📌 駐守 (HOLD)'; uiElements.uiArmyMode.style.color = '#00f0ff'; }
+        else { uiElements.uiArmyMode.innerText = '🛡️ 護衛 (GUARD)'; uiElements.uiArmyMode.style.color = '#00ff66'; }
+      }
+
+      if (me.isDead && !me.core) {
+        document.getElementById('game-over-modal').style.display = 'flex';
+      }
     }
   }
 
   updateUI();
-
-  const membersModal = document.getElementById('members-modal');
-  if (membersModal && membersModal.style.display === 'flex') {
-    openMembersModal();
-  }
-
-  if (me) {
-    document.getElementById('ui-gold').innerText = me.gold;
-    if (me.core) {
-      document.getElementById('ui-core-hp-text').innerText = `${Math.ceil(me.core.hp)} / 1000`;
-      document.getElementById('ui-core-hp-bar').style.width = `${(me.core.hp / 1000) * 100}%`;
-    } else {
-      document.getElementById('ui-core-hp-text').innerText = '未放置 (按E)';
-      document.getElementById('ui-core-hp-bar').style.width = '0%';
-    }
-    document.getElementById('ui-army-count').innerText = me.army.length;
-
-    // 🟢 移動速度顯示與四段變色 (80%+ 綠 / 51-80% 黃 / 21-50% 紅 / <=20% 暗紅)
-    const speedEl = document.getElementById('ui-move-speed');
-    if (speedEl) {
-      const ratio = me.speedRatio !== undefined ? me.speedRatio : 1.0;
-      const pct = Math.round(ratio * 100);
-      speedEl.innerText = `${pct}%`;
-      if (pct > 80) speedEl.style.color = '#00ff66';
-      else if (pct >= 51) speedEl.style.color = '#ffb700';
-      else if (pct >= 21) speedEl.style.color = '#ff0055';
-      else speedEl.style.color = '#800000'; // 暗紅警戒色
-    }
-
-    const modeEl = document.getElementById('ui-army-mode');
-    if (modeEl) {
-      if (me.armyState === 'FREE') { modeEl.innerText = '⚔️ 自由 (FREE)'; modeEl.style.color = '#ffb700'; }
-      else if (me.armyState === 'HOLD') { modeEl.innerText = '📌 駐守 (HOLD)'; modeEl.style.color = '#00f0ff'; }
-      else { modeEl.innerText = '🛡️ 護衛 (GUARD)'; modeEl.style.color = '#00ff66'; }
-    }
-
-    if (me.isDead && !me.core) {
-      document.getElementById('game-over-modal').style.display = 'flex';
-    }
-  }
 }
