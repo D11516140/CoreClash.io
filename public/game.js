@@ -62,9 +62,18 @@ function clearPinnedTooltip() {
 }
 window.clearPinnedTooltip = clearPinnedTooltip;
 
-let cachedCanvasRect = canvas.getBoundingClientRect();
-window.addEventListener('resize', () => { cachedCanvasRect = canvas.getBoundingClientRect(); });
-window.addEventListener('scroll', () => { cachedCanvasRect = canvas.getBoundingClientRect(); });
+// 🎯 主動快取更新矩形 (解決 CSS scale 縮放後的座標偏移)
+function updateCanvasRect() {
+  if (canvas) {
+    window.cachedCanvasRect = canvas.getBoundingClientRect();
+  }
+}
+window.updateCanvasRect = updateCanvasRect;
+updateCanvasRect();
+
+window.addEventListener('resize', updateCanvasRect);
+window.addEventListener('scroll', updateCanvasRect);
+window.addEventListener('load', () => setTimeout(updateCanvasRect, 50));
 
 function sendAction(action, data) {
   if (window.isSandboxActive && typeof window.handleSandboxAction === 'function') {
@@ -149,7 +158,6 @@ canvas.addEventListener('mousedown', (e) => {
       }
     }
 
-    // 🟢 4 & 5. 敵方防禦塔與敵方單位放置判定
     if (window.buildMode === 'ENEMY_TOWER_BASIC') {
       sendAction('placeEnemyTower', { x: mousePos.x, y: mousePos.y, type: 'BASIC' });
       return;
@@ -205,7 +213,6 @@ function findEntityAtPos(wx, wy) {
   }
 
   for (const p of Object.values(window.lastGameState.players)) {
-    // 🟢 3. 排查假人 (enemy_ai)，防止點擊未知點畫面動不了
     if (p.id === 'enemy_ai' || p.isDummy || p.isDead || !p.isOnline) continue;
     if (Math.hypot(wx - p.x, wy - p.y) <= 14) {
       return { type: 'COMMANDER', id: p.id, obj: p, x: p.x, y: p.y };
@@ -342,8 +349,12 @@ function renderLoop() {
       camera.y = me.core.y;
     }
 
-    mouseScreenPos.x = (rawClientX - cachedCanvasRect.left) * (canvas.width / cachedCanvasRect.width);
-    mouseScreenPos.y = (rawClientY - cachedCanvasRect.top) * (canvas.height / cachedCanvasRect.height);
+    // 🎯 精準計算縮放後的 1200x800 Canvas 邏輯座標
+    const rect = window.cachedCanvasRect || canvas.getBoundingClientRect();
+    if (rect && rect.width > 0 && rect.height > 0) {
+      mouseScreenPos.x = (rawClientX - rect.left) * (canvas.width / rect.width);
+      mouseScreenPos.y = (rawClientY - rect.top) * (canvas.height / rect.height);
+    }
 
     const wPos = screenToWorld(mouseScreenPos.x, mouseScreenPos.y);
     mousePos.x = wPos.x;

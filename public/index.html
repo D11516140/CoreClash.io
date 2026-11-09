@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CoreClash.io - Cyber RTS</title>
-  <link rel="stylesheet" href="css/style.css?v=21">
+  <link rel="stylesheet" href="css/style.css?v=22">
 </head>
 <body>
 
@@ -253,6 +253,10 @@
     if (!wrapper) return;
     const scale = Math.min((window.innerWidth * 0.95) / 1200, (window.innerHeight * 0.95) / 800);
     wrapper.style.transform = `scale(${scale})`;
+
+    if (typeof window.updateCanvasRect === 'function') {
+      window.updateCanvasRect();
+    }
   }
   window.addEventListener('resize', autoScaleGame);
   window.addEventListener('DOMContentLoaded', autoScaleGame);
@@ -267,9 +271,13 @@
   }
 </script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/sandboxManager.js?v=21"></script>
-<script src="js/ui.js?v=21"></script>
-<script src="js/render.js?v=21"></script>
-<script src="game.js?v=21"></script>
+<!-- 🧪 單機沙盒腳本 (依字母順序載入) -->
+<script src="js/sandbox/sandboxClasses.js?v=22"></script>
+<script src="js/sandbox/sandboxCombat.js?v=22"></script>
+<script src="js/sandbox/sandboxDevTools.js?v=22"></script>
+<script src="js/sandbox/sandboxEngine.js?v=22"></script>
+<script src="js/ui.js?v=22"></script>
+<script src="js/render.js?v=22"></script>
+<script src="game.js?v=22"></script>
 </body>
 </html>
