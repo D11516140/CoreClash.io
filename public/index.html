@@ -78,8 +78,16 @@
   </div>
 
   <!-- 👈 左側 HUD 面板 -->
-  <div class="hud-card">
+  <div class="hud-card" style="pointer-events: auto;">
     <div class="hud-stat">
+      <span>⭐ 指揮官等級</span>
+      <span id="ui-player-level" class="stat-val" style="color: var(--primary);">Lv.1</span>
+    </div>
+    <div class="hp-bar-bg" title="經驗值進度" style="height: 6px; background: rgba(0,0,0,0.6); border-radius: 3px; overflow: hidden; margin-top: 2px;">
+      <div id="ui-exp-bar" class="hp-bar-fill" style="width: 0%; height: 100%; background: #00f0ff; transition: width 0.3s;"></div>
+    </div>
+
+    <div class="hud-stat" style="margin-top: 6px;">
       <span>💰 金幣</span>
       <span id="ui-gold" class="stat-val" style="color: var(--warning);">250</span>
     </div>
@@ -88,6 +96,7 @@
       <span id="ui-core-hp-text" class="stat-val" style="color: var(--danger);">未放置 (按E)</span>
     </div>
     <div class="hp-bar-bg"><div id="ui-core-hp-bar" class="hp-bar-fill" style="width: 0%;"></div></div>
+    
     <div class="hud-stat" style="margin-top: 6px;">
       <span>⚔️ 軍隊數量</span>
       <span id="ui-army-count" class="stat-val" style="color: var(--primary);">0</span>
@@ -100,6 +109,9 @@
       <span>🚩 軍隊模式</span>
       <span id="ui-army-mode" class="stat-val" style="color: var(--success);">跟隨</span>
     </div>
+
+    <!-- 📊 流派預測按鈕 -->
+    <button class="alliance-btn" style="width: 100%; margin-top: 8px; font-size: 11px; padding: 6px 0; background: rgba(0, 240, 255, 0.2); border: 1px solid var(--primary); cursor: pointer; pointer-events: auto; position: relative; z-index: 999;" onclick="openClassInfoModal()">📊 流派預測</button>
   </div>
 
   <!-- 🏆 右側 HUD 容器 -->
@@ -179,21 +191,19 @@
       </div>
 
       <div class="dev-tier2-container">
-        <!-- 1. 強化頁面 -->
         <div id="dev-tab-buff" class="dev-sub-panel active">
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxAddGold(10000)">💰 +10,000G</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxAddExp(50)">⚡ +50 經驗</button>
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxAddLevel(1)">⬆️ +1 等級</button>
-          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxMaxLevel()">👑 等級封頂</button>
+          <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxMaxLevel()">👑 等級封頂(30)</button>
           <button class="alliance-btn dev-btn-green" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxToggleGodMode()">🛡️ 無敵模式</button>
         </div>
 
-        <!-- 2. 生怪頁面 -->
         <div id="dev-tab-monster" class="dev-sub-panel">
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxSpawnMonster(false)">👾 紫晶怪</button>
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxSpawnMonster(true)">👹 突襲菁英怪</button>
         </div>
 
-        <!-- 3. 敵方單位頁面 -->
         <div id="dev-tab-enemy" class="dev-sub-panel">
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxBuildEnemyTower('BASIC')">🗼 敵基礎塔</button>
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxBuildEnemyTower('ADVANCED')">💥 敵重砲塔</button>
@@ -201,7 +211,6 @@
           <button class="alliance-btn" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxSpawnEnemySoldier('HEAVY')">🛡️ 敵重裝兵</button>
         </div>
 
-        <!-- 4. 重置頁面 -->
         <div id="dev-tab-reset" class="dev-sub-panel">
           <button class="alliance-btn dev-btn-green" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxHealAllUnits()">💚 恢復血量</button>
           <button class="alliance-btn dev-btn-green" style="padding: 4px 4px; font-size: 10px;" onclick="sandboxClearEnemies()">💚 清除敵方</button>
@@ -218,6 +227,31 @@
   <div id="settings-modal" class="modal-overlay"></div>
   <div id="members-modal" class="modal-overlay"></div>
   <div id="custom-confirm-modal" class="modal-overlay"></div>
+
+  <!-- 🌟 流派預測與雷達圖 Modal (預設 display: none 隱藏，僅由點擊觸發) -->
+  <div id="class-selection-modal" class="modal-overlay" style="display: none; z-index: 99999; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); align-items: center; justify-content: center;">
+    <div style="background: rgba(13, 17, 23, 0.98); border: 2px solid var(--primary); border-radius: 12px; padding: 20px; width: 680px; max-width: 90%; color: #fff; box-shadow: 0 0 35px rgba(0, 240, 255, 0.4); display: flex; flex-direction: column; gap: 16px;">
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+        <div>
+          <h2 style="margin: 0; font-size: 20px; color: var(--primary);">🌟 戰術轉職協議 (流派預測)</h2>
+          <span style="font-size: 12px; color: #9ca3af;">系統根據你目前的作戰風格評估了以下流派預覽</span>
+        </div>
+        <button class="alliance-btn leave-btn" onclick="closeClassModal()" style="padding: 4px 10px;">✖ 關閉</button>
+      </div>
+
+      <div style="display: flex; gap: 20px; align-items: center;">
+        <div style="display: flex; flex-direction: column; align-items: center; background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; border: 1px solid rgba(0,240,255,0.3);">
+          <span style="font-size: 12px; font-weight: bold; color: var(--primary); margin-bottom: 6px;">📊 當前作戰行為傾向</span>
+          <canvas id="radarChartCanvas" width="200" height="200"></canvas>
+        </div>
+
+        <div id="class-cards-container" style="display: flex; flex-direction: column; gap: 10px; flex: 1;">
+        </div>
+      </div>
+
+    </div>
+  </div>
 
   <div id="controls-bar">
     <button id="btn-back" class="key-btn back-btn" onclick="exitSubMenu()" style="display: none;">
@@ -271,7 +305,6 @@
   }
 </script>
 <script src="/socket.io/socket.io.js"></script>
-<!-- 🧪 單機沙盒腳本 (依字母順序載入) -->
 <script src="js/sandbox/sandboxClasses.js?v=22"></script>
 <script src="js/sandbox/sandboxCombat.js?v=22"></script>
 <script src="js/sandbox/sandboxDevTools.js?v=22"></script>

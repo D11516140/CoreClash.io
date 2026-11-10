@@ -1,9 +1,44 @@
 // 🛠️ public/js/sandbox/sandboxDevTools.js - 開發者面板按鈕指令與動作處理
 
+// ⚡ 沙盒動態經驗發放與升等運算系統 (等級上限 Lv.30)
+function sandboxAddExp(amount = 25) {
+  if (!isSandboxActive) return;
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
+  if (!p) return;
+
+  p.level = p.level || 1;
+  p.stats = p.stats || { aggro: 0, dev: 0, coop: 0, pve: 0, tactics: 0 };
+  
+  if (p.level >= 30) {
+    p.level = 30;
+    p.maxExp = 3000;
+    p.exp = p.maxExp;
+    return;
+  }
+
+  p.exp = (p.exp || 0) + amount;
+  p.maxExp = p.level * 100;
+
+  while (p.exp >= p.maxExp && p.level < 30) {
+    p.exp -= p.maxExp;
+    p.level += 1;
+    p.maxExp = p.level * 100;
+    sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 30, text: `⬆️ Lv.${p.level}!`, color: '#00f0ff' });
+  }
+
+  if (p.level >= 30) {
+    p.level = 30;
+    p.exp = p.maxExp;
+    sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 30, text: '👑 已達最高等級 Lv.30', color: '#ffb700' });
+  }
+}
+window.sandboxAddExp = sandboxAddExp;
+
 function sandboxAddGold(amount = 10000) {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p) {
     p.gold += amount;
     sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: `+${amount}G`, color: '#ffb700' });
@@ -12,28 +47,39 @@ function sandboxAddGold(amount = 10000) {
 
 function sandboxAddLevel(num = 1) {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p) {
-    p.level = (p.level || 1) + num;
+    if (p.level >= 30) {
+      p.level = 30;
+      p.maxExp = 3000;
+      p.exp = p.maxExp;
+      sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: '👑 已達最高等級 Lv.30', color: '#ffb700' });
+      return;
+    }
+    p.level = Math.min(30, (p.level || 1) + num);
+    p.maxExp = p.level * 100;
+    if (p.level >= 30) p.exp = p.maxExp;
     sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: `LEVEL UP! Lv.${p.level}`, color: '#00ff66' });
   }
 }
 
 function sandboxMaxLevel() {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p) {
-    p.level = 99;
-    sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: 'MAX LEVEL 99!', color: '#ffb700' });
+    p.level = 30;
+    p.maxExp = 3000;
+    p.exp = 3000;
+    sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: '👑 等級已封頂 (Lv.30)!', color: '#ffb700' });
   }
 }
 
 function sandboxToggleGodMode() {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p) {
     p.isInvincible = !p.isInvincible;
     const statusText = p.isInvincible ? '🛡️ 無敵模式已開啟 (鎖血)' : '❌ 無敵模式已關閉';
@@ -43,8 +89,8 @@ function sandboxToggleGodMode() {
 
 function sandboxSpawnMonster(isRaid = false) {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (!p) return;
 
   const pos = p.core ? getDonutSpawnPos(p.core, sandboxState.mapBounds) : { x: p.x + 200, y: p.y + 200 };
@@ -78,8 +124,8 @@ function sandboxSpawnEnemySoldier(type = 'BASIC') {
 
 function sandboxHealAllUnits() {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p) {
     p.hp = p.maxHp;
     p.isDead = false;
@@ -105,8 +151,8 @@ function sandboxClearAllSoldiers() {
   if (!isSandboxActive) return;
   Object.values(sandboxState.players).forEach(p => { p.army = []; });
   sandboxState.neutralSoldiers = [];
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p) {
     sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: '💥 全場部隊已重置清空！', color: '#ff0055' });
   }
@@ -114,8 +160,8 @@ function sandboxClearAllSoldiers() {
 
 function sandboxResetCore() {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p && p.core) {
     sandboxState.events.push({ type: 'EXPLOSION', x: p.core.x, y: p.core.y, color: '#ff0055', count: 24 });
     p.core = null;
@@ -128,19 +174,22 @@ function sandboxResetCore() {
 
 function sandboxResetExp() {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p) {
     p.level = 1;
     p.exp = 0;
-    sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: '✨ 等級經驗已重置', color: '#00f0ff' });
+    p.maxExp = 100;
+    p.stats = { aggro: 0, dev: 0, coop: 0, pve: 0, tactics: 0 };
+    p.classRole = null;
+    sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: '✨ 等級與行為數據已重置', color: '#00f0ff' });
   }
 }
 
 function sandboxResetGold() {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (p) {
     p.gold = 250;
     sandboxState.events.push({ type: 'FLOAT_TEXT', x: p.x, y: p.y - 20, text: '🪙 金幣重置為 250G', color: '#ffb700' });
@@ -149,9 +198,11 @@ function sandboxResetGold() {
 
 function handleSandboxAction(action, data) {
   if (!isSandboxActive) return;
-  const pid = getPlayerId();
-  const p = sandboxState.players[pid];
+  const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+  const p = sandboxState && sandboxState.players ? sandboxState.players[pid] : null;
   if (!p) return;
+
+  p.stats = p.stats || { aggro: 0, dev: 0, coop: 0, pve: 0, tactics: 0 };
 
   if (action === 'placeCore') {
     const cx = Math.floor(data.x / 40) * 40 + 20;
@@ -181,6 +232,11 @@ function handleSandboxAction(action, data) {
         cooldownSec: 0, maxCooldownSec: cfg.COOLDOWN_SEC,
         laserColor: isAdv ? '#ff0055' : '#00f0ff'
       });
+      
+      // 📊 增加建設傾向與經驗
+      p.stats.dev = (p.stats.dev || 0) + 1;
+      sandboxAddExp(15);
+      
       sandboxState.events.push({ type: 'FLOAT_TEXT', x: tx, y: ty - 15, text: `-${cfg.COST}G`, color: '#ffb700' });
     }
   } else if (action === 'placeEnemyTower') {
@@ -207,22 +263,24 @@ function handleSandboxAction(action, data) {
     const cfg = isHeavy ? CONFIG.SOLDIER.HEAVY : CONFIG.SOLDIER.BASIC;
     const enemyAI = sandboxState.players['enemy_ai'];
 
-    enemyAI.army.push({
-      id: `soldier_enemy_${counters.soldierIdCounter++}`,
-      ownerId: 'enemy_ai',
-      type: data.type,
-      x: data.x,
-      y: data.y,
-      anchorX: data.x,
-      anchorY: data.y,
-      targetId: null,
-      returning: false,
-      hp: cfg.HP, maxHp: cfg.HP,
-      atk: cfg.ATK, speed: cfg.SPEED,
-      radius: cfg.RADIUS,
-      state: 'HOLD',
-      attackCooldownSec: 0
-    });
+    if (enemyAI) {
+      enemyAI.army.push({
+        id: `soldier_enemy_${counters.soldierIdCounter++}`,
+        ownerId: 'enemy_ai',
+        type: data.type,
+        x: data.x,
+        y: data.y,
+        anchorX: data.x,
+        anchorY: data.y,
+        targetId: null,
+        returning: false,
+        hp: cfg.HP, maxHp: cfg.HP,
+        atk: cfg.ATK, speed: cfg.SPEED,
+        radius: cfg.RADIUS,
+        state: 'HOLD',
+        attackCooldownSec: 0
+      });
+    }
 
     sandboxState.events.push({ type: 'FLOAT_TEXT', x: data.x, y: data.y - 15, text: `⚠️ 敵方${isHeavy ? '重裝' : '步'}兵(駐守)`, color: '#ff0055' });
   } else if (action === 'buySoldier') {
@@ -246,6 +304,10 @@ function handleSandboxAction(action, data) {
         state: p.armyState || 'GUARD',
         attackCooldownSec: 0
       });
+
+      // 📊 增加戰術指揮傾向與經驗
+      p.stats.tactics = (p.stats.tactics || 0) + 1;
+      sandboxAddExp(10);
     }
   } else if (action === 'teleportCore') {
     if (p.core) {
@@ -270,6 +332,7 @@ function handleSandboxAction(action, data) {
   }
 }
 
+// 🟢 掛載全域 Window 導出
 window.handleSandboxAction = handleSandboxAction;
 window.sandboxAddGold = sandboxAddGold;
 window.sandboxAddLevel = sandboxAddLevel;

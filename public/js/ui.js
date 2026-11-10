@@ -3,7 +3,6 @@
 window.activeMenu = window.activeMenu || null;
 window.buildMode = window.buildMode || null;
 
-// 💬 賽博風動態 Toast 提示
 let toastTimer = null;
 function showCyberToast(msg) {
   const toast = document.getElementById('cyber-toast');
@@ -21,7 +20,6 @@ function getSocket() {
   return (typeof socket !== 'undefined' && socket) ? socket : window.socket;
 }
 
-// 🟢 玩家 ID 取得保險
 function getPlayerId() {
   if (!window.myPlayerId) {
     window.myPlayerId = localStorage.getItem('corewar_player_id');
@@ -34,7 +32,6 @@ function getPlayerId() {
 }
 window.getPlayerId = getPlayerId;
 
-// 🟢 全域玩家解析器 (自動兼顧 PVP Socket ID 與沙盒離線 ID)
 function getCurrentPlayer(state) {
   if (!state || !state.players) return null;
   if (window.isSandboxActive) {
@@ -50,7 +47,6 @@ function getCurrentPlayer(state) {
 }
 window.getCurrentPlayer = getCurrentPlayer;
 
-// ⚔️ 進入 PVP 戰局邏輯
 function joinBattleFromLobby() {
   const nickInput = document.getElementById('nickname-input');
   let name = nickInput ? nickInput.value.trim() : '';
@@ -69,7 +65,6 @@ function joinBattleFromLobby() {
 }
 window.joinBattleFromLobby = joinBattleFromLobby;
 
-// 🎨 代表色選擇器
 function selectPlayerColor(color, el) {
   localStorage.setItem('corewar_player_color', color);
   document.querySelectorAll('.color-dot').forEach(dot => dot.classList.remove('active'));
@@ -367,7 +362,7 @@ let lastLbHTMLCache = '';
 let lastHudDataCache = '';
 
 function updateUI() {
-  const me = getCurrentPlayer(window.lastGameState);
+  const me = getCurrentPlayer(window.lastGameState || window.sandboxState);
   if (!me) return;
   if (!uiElements.btnCore) initUIElementsCache();
 
@@ -500,11 +495,22 @@ function updateHUD(state) {
     const totalWeight = (me.army || []).reduce((acc, s) => acc + (s.type === 'HEAVY' ? 2 : 1), 0);
     const coreHp = me.core ? Math.ceil(me.core.hp) : -1;
     const speedRatio = me.speedRatio !== undefined ? me.speedRatio : 1.0;
+    const level = me.level || 1;
+    const exp = me.exp || 0;
+    const maxExp = me.maxExp || (level * 100);
 
-    const currentDataKey = `${me.gold}_${coreHp}_${totalWeight}_${speedRatio}_${me.armyState}_${me.isDead}`;
+    const currentDataKey = `${me.gold}_${coreHp}_${totalWeight}_${speedRatio}_${me.armyState}_${me.isDead}_${level}_${exp}`;
 
     if (currentDataKey !== lastHudDataCache) {
       lastHudDataCache = currentDataKey;
+
+      const lvlEl = document.getElementById('ui-player-level');
+      const expBarEl = document.getElementById('ui-exp-bar');
+      if (lvlEl) lvlEl.innerText = level >= 30 ? `Lv.30 (MAX)` : `Lv.${level}`;
+      if (expBarEl) {
+        const expPct = level >= 30 ? 100 : Math.min(100, Math.round((exp / maxExp) * 100));
+        expBarEl.style.width = `${expPct}%`;
+      }
 
       if (uiElements.uiGold) uiElements.uiGold.innerText = me.gold || 0;
 
@@ -610,3 +616,85 @@ function updateAllianceUI(state) {
     if (reqContainer) reqContainer.style.display = 'none';
   }
 }
+
+// 🟢 手動開啟流派預測 Modal (兼顧 PVP 與沙盒多防護讀取)
+function openClassInfoModal() {
+  let state = (typeof isSandboxActive !== 'undefined' && isSandboxActive) ? window.sandboxState : (window.lastGameState || window.sandboxState);
+  let me = state ? getCurrentPlayer(state) : null;
+  
+  if (!me && typeof sandboxState !== 'undefined' && sandboxState.players) {
+    const pid = typeof getPlayerId === 'function' ? getPlayerId() : window.myPlayerId;
+    me = sandboxState.players[pid] || Object.values(sandboxState.players)[0];
+  }
+
+  if (!me) {
+    if (typeof showCyberToast === 'function') showCyberToast('⚠️ 尚未偵測到指揮官數據');
+    return;
+  }
+
+  triggerClassMilestoneModal(me);
+}
+window.openClassInfoModal = openClassInfoModal;
+
+// 🎯 升等彈窗觸發與雷達圖繪製 (包含容錯保護與防覆蓋)
+function triggerClassMilestoneModal(player) {
+  const modal = document.getElementById('class-selection-modal');
+  const container = document.getElementById('class-cards-container');
+  const canvas = document.getElementById('radarChartCanvas');
+
+  if (!modal || !player) return;
+
+  player.stats = player.stats || { aggro: 0, dev: 0, coop: 0, pve: 0, tactics: 0 };
+
+  modal.style.display = 'flex';
+
+  if (canvas) {
+    try {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (typeof drawRadarChart === 'function') {
+        drawRadarChart(ctx, 100, 100, 70, player.stats);
+      }
+    } catch (err) {
+      console.error("繪製雷達圖失敗:", err);
+    }
+  }
+
+  if (container) {
+    const cards = typeof getSurprise3Cards === 'function' ? getSurprise3Cards(player.stats) : [];
+    if (cards.length === 0) {
+      container.innerHTML = `<div style="color:#9ca3af; font-size:12px; padding:20px; text-align:center;">戰術數據分析中... (請嘗試建塔、徵兵或攻擊敵軍)</div>`;
+    } else {
+      container.innerHTML = cards.map(c => `
+        <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(0,240,255,0.3); border-radius: 8px; padding: 10px; cursor: pointer; transition: 0.2s;" 
+             onmouseover="this.style.borderColor='var(--primary)'; this.style.background='rgba(0,240,255,0.1)';" 
+             onmouseout="this.style.borderColor='rgba(0,240,255,0.3)'; this.style.background='rgba(255,255,255,0.05)';"
+             onclick="selectClassRole('${c.id}', '${c.name}')">
+          <div style="display: flex; justify-content: space-between; font-weight: bold; color: var(--primary);">
+            <span>${c.name}</span>
+            <span style="font-size: 11px; color: var(--warning);">${c.tag}</span>
+          </div>
+          <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">${c.desc}</div>
+        </div>
+      `).join('');
+    }
+  }
+}
+window.triggerClassMilestoneModal = triggerClassMilestoneModal;
+
+function selectClassRole(roleId, roleName) {
+  const me = getCurrentPlayer(window.lastGameState || window.sandboxState);
+  if (me) me.classRole = roleId;
+
+  if (typeof showCyberToast === 'function') {
+    showCyberToast(`✨ 預覽流派：${roleName}`);
+  }
+  closeClassModal();
+}
+window.selectClassRole = selectClassRole;
+
+function closeClassModal() {
+  const modal = document.getElementById('class-selection-modal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeClassModal = closeClassModal;
